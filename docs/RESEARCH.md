@@ -71,6 +71,7 @@ Nothing here was tested on the target machine. Every `UNVERIFIED` and `SNIP` ite
 - **GlobalShortcuts** v2. KDE emits `Deactivated` from kglobalaccel's `globalShortcutReleased`, so hold-to-talk works by design (not runtime-tested). `SRC xdg-desktop-portal-kde 6.6`
 - **Host app identity:** `org.freedesktop.host.portal.Registry.Register(app_id)` once before any portal call; `app_id` must match a `.desktop` basename. `SRC`
 - **KGlobalAccel** (`org.kde.kglobalaccel /kglobalaccel`): `globalShortcutsByKey`, `globalShortcutAvailable` (read-only conflict queries), `doRegister`/`setShortcutKeys` (fallback registration), component signals `globalShortcutPressed/Released`. `SRC`
+- **Notifications of other apps:** `Notify` is a method call, not a signal; observing it needs a bus-monitoring connection. Mechanism on Plasma 6.6 `UNVERIFIED` (spike S8.1).
 - **DND:** `org.freedesktop.Notifications` property `Inhibited` with `PropertiesChanged` (KDE extension). `SRC`
 - **Theme:** `kdeglobals` `[General] AccentColor`, `[KDE] AnimationDurationFactor` (0 = animations off). Change signal `org.kde.kconfig.notify.ConfigChanged`; exact path/payload `UNVERIFIED`. `SRC`
 - **Lock:** `org.freedesktop.ScreenSaver.ActiveChanged`, logind `LockedHint` — standard, but not re-checked: `UNVERIFIED` (spike S2.5).

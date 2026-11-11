@@ -20,6 +20,12 @@ Status key: `proposed` (not yet built) · `accepted` · `superseded by D-xxx`.
 - **Alternative if you prefer:** you explicitly authorize Waddle to set this one flag at onboarding (and unset it on uninstall). Say so and I will record it as a sanctioned exception alongside the KWin rule.
 - **Status:** proposed; default is "you run it".
 
+### D-036 You install in-app components; Waddle only connects ❓ ⚠ deviates from VISION (clarifies)
+- **Context.** Installing the Blender extension writes into Blender's extensions directory and preferences. The same goes for Krita/GIMP plug-ins and for enabling obs-websocket. That is changing another application's configuration.
+- **Decision.** Onboarding shows the file and the exact command (for Blender: `blender --command extension install-file …`) with a Copy button; you run it. Waddle never changes Blender's "Allow Online Access" preference; if the adapter's socket turns out to need it (spike S5.1), the adapter reports "unavailable" and the choice comes back to you.
+- **Alternative if you prefer:** you authorize `install.sh` to install and remove the Blender extension. It would then be added to the sanctioned list in ARCHITECTURE §1 and to the uninstall manifest.
+- **Status:** proposed; default is "you run it".
+
 ---
 
 ## Structure
@@ -54,12 +60,17 @@ Status key: `proposed` (not yet built) · `accepted` · `superseded by D-xxx`.
 
 ### D-004 Placement = KWin rule + Waddle's own KWin script ⚠ deviates from VISION (addition)
 - The rule (as specified) sets the static properties. Runtime repositioning — restoring per-monitor position, following the active monitor, stepping aside from a highlight — is done by Waddle's KWin script moving **Waddle's own windows only**.
-- **Why.** A Wayland client cannot position itself, and rewriting rules plus reconfiguring KWin for every move is slow and disruptive. Moving one's own window is within "its own resources"; the script checks the window class and a test asserts it never touches another window.
+- **Mechanism.** Scripts cannot receive calls, so host-initiated moves use a generated one-shot script (load, run, unload) with the geometry baked in; following the active monitor lives in `waddle-core.js`.
+- **Rule scope.** The rule matches only the penguin window and the highlight overlay, not Settings/History/Eyes. The brief's rule list is kept as is; the penguin window avoids taking focus on show through window flags, not a rule, so the card's input field can still be typed into.
+- **Dodging.** A Wayland client sees no pointer outside its own surfaces, so "cursor approaches" is true proximity only while cursor tracking is already loaded; otherwise it triggers on touching the penguin body after a short dwell.
+- **Why.** A Wayland client cannot position itself, and rewriting rules plus reconfiguring KWin for every move is slow and disruptive. Moving one's own window is within "its own resources"; every script checks class and title, and a test asserts no other window is touched.
+- **Open.** Whether keep-above is enough over fullscreen apps and open menus is spike S1.2.
 - **Status:** proposed.
 
 ### D-005 Dedicated Rust capture helper that also owns pixel processing ⚠ deviates from VISION (scope of "tiny")
 - **Verified.** KWin 6.6 authorizes ScreenShot2 by `/proc/<pid>/exe` matched against `.desktop` `Exec=`, first match wins. Authorizing Python would authorize every Python process. On Plasma 6.8+ there is no check at all.
-- **Decision.** `waddle-capture` (Rust, `zbus`) at its own path with its own `.desktop`. It is spawned with an inherited socketpair (no listening socket), exposes only single-window and user-drawn-area capture, re-checks lock state and the blocklist itself, and performs masking, change detection, downscaling, cropping, and encoding.
+- **Decision.** `waddle-capture` (Rust, `zbus`) at its own path with its own `.desktop`. It is spawned with an inherited socketpair (no listening socket), exposes a single verb (`capture_window(uuid)`), checks lock state and the blocklist before **and after** each capture (discarding the frame if the title became blocked in between), latches a `blind` command, and performs masking, change detection, downscaling, cropping, and encoding.
+- **What it does not guarantee.** That the target is the window you are working in is decided by the desktop and the KWin script; the helper enforces lock, blocklist, and pause only.
 - **Why Rust.** No Qt dependency, a single static binary, memory safety for the one component that touches raw pixels.
 - **Why more than "tiny".** Keeping raw frames out of Python serves the RAM budget and the "pixels are contained" invariant, and puts the privacy gate in the smallest auditable unit.
 - **Limit, stated plainly.** Any process running as you can execute the helper; path-based authorization cannot prevent that. The helper narrows exposure; it is not a sandbox boundary.
@@ -77,6 +88,7 @@ Status key: `proposed` (not yet built) · `accepted` · `superseded by D-xxx`.
 
 ### D-011 Layer-shell is an optional backend, not the default
 - **Why.** It is the more native overlay mechanism, but its QML module needs the distro's PySide6 (system Qt), which conflicts with D-006/D-008's pinned wheels, and it is untested from PySide6. Spike S1.3 decides whether it earns a place behind the `Placement` interface.
+- **Would change if:** S1.2 shows layer-shell is the only way to stay visible above fullscreen windows or menus.
 - **Status:** proposed.
 
 ### D-013 `kdotool` is a documented optional fallback only
@@ -84,7 +96,7 @@ Status key: `proposed` (not yet built) · `accepted` · `superseded by D-xxx`.
 - **Status:** proposed.
 
 ### D-014 Popups are composited by window id, never captured by area
-- **Why.** Menus are separate surfaces and may be absent from an active-window capture; an area grab would include other applications, violating "only the active window".
+- **Why.** Menus are separate surfaces and may be absent from a window capture; an area grab would include other applications, violating "only the active window". Each popup passes the same helper checks.
 - **Depends on:** spike S2.1.
 - **Status:** proposed.
 
@@ -109,13 +121,14 @@ Status key: `proposed` (not yet built) · `accepted` · `superseded by D-xxx`.
 ### D-016 STT, TTS, and OCR inference run in the brain ⚠ deviates from VISION
 - The host captures and plays audio; `waddle-voice` (STT + TTS) and OCR (inside `waddle-api`) do the inference.
 - **Why.** A Whisper model or OCR runtime in the desktop process would break the 150 MB budget several times over. A separate TTS process also keeps GPL code (Piper, espeak-ng) out of the desktop and API processes.
-- **Cost.** Voice needs the brain. With the brain down Waddle is text-only — and has no model to answer with anyway.
+- **Cost.** Voice needs the brain. With the brain down Waddle is text-only — and has no model to answer with anyway. Versions that can only be read by OCR (title bar, About dialog) also wait for the brain; cached versions and the metadata, `--version`, and caption-pattern steps still work. This narrows the brief's "version detection still works" for that case.
 - **Status:** proposed.
 
-### D-017 Three GPU images, no PyTorch
-- `ollama` (upstream), `waddle-api` (onnxruntime-gpu, CUDA 13) and `waddle-voice` (CTranslate2, CUDA 12 userland).
+### D-017 Separate GPU worker images, no PyTorch in ours
+- `ollama` (upstream), `waddle-ocr` (onnxruntime-gpu, CUDA 13) and `waddle-voice` (CTranslate2, CUDA 12 userland). `waddle-api` itself is CPU-only.
+- OCR and STT are separate worker processes so the VRAM governor can terminate them: freeing tensors usually leaves the CUDA context allocated, and only process exit returns it.
 - **Why.** CTranslate2 wheels need CUDA 12 cuBLAS/cuDNN 9 while onnxruntime-gpu ships CUDA 13 builds; mixing them in one environment is fragile. Avoiding PyTorch (Kokoro via ONNX, OCR via ONNX) removes the largest dependency and its own Blackwell matrix.
-- **Blackwell.** Ollama and CTranslate2 document 50-series support (CTranslate2 with `float16` only). onnxruntime-gpu and vLLM are inferred from their CUDA 13 builds and must pass spike S3.1 before being pinned.
+- **Blackwell.** Ollama and CTranslate2 document 50-series support (CTranslate2 with `float16` only). onnxruntime-gpu and vLLM are inferred from their CUDA 13 builds; both are in spike S3.1 and are not pinned until they pass. The vLLM provider itself is built in Phase 9, before the bake-off.
 - **Status:** proposed.
 
 ### D-018 Model roles in config; provisional candidates only
@@ -123,9 +136,12 @@ Status key: `proposed` (not yet built) · `accepted` · `superseded by D-xxx`.
 - Tags and sizes come from search snippets and are re-verified at pull time (S3.3). No model name appears in code; each config entry names its grounding codec.
 - **Status:** proposed; final choice written here by the Phase 9 bake-off.
 
-### D-019 Only `waddle-api` is published; the model server has no route out ⚠ deviates from VISION (stricter)
-- The brief says every port binds to `127.0.0.1`. Ollama/vLLM, SearXNG, and the voice sidecar are instead on an internal Docker network and not published at all; the model server's network has no egress, and pulling models is an explicit command.
-- **Why.** Smaller surface, and "models cannot phone home" becomes a property of the network rather than a promise.
+### D-019 Nothing is published; only `waddle-fetch` and SearXNG can reach the internet ⚠ deviates from VISION (stricter)
+- The brief says every port binds to `127.0.0.1`. Instead no service publishes a port (see D-034). The model server and `waddle-api` sit on internal networks with no route out; pulling models is an explicit command.
+- Search, fetch, and HTML extraction run in `waddle-fetch`, which has egress but no token, no database mount, and no access to the model network.
+- **Why.** `waddle-api` holds frames, history, and the profile; if it could also reach the internet, a prompt-injected model would have both secrets and a channel. Splitting them makes "the worst case is a bad answer" a property of the topology.
+- **Exception.** Enabling a remote model provider gives the API a route to that provider through a compose profile, with a visible indicator.
+- **Native mode** loses these network boundaries; `doctor` says so.
 - **Status:** proposed.
 
 ### D-020 SQLite + FTS5 + sqlite-vec 0.1.9 as a derived index
@@ -135,8 +151,9 @@ Status key: `proposed` (not yet built) · `accepted` · `superseded by D-xxx`.
 
 ### D-025 `balanced` is the default VRAM profile
 - `fast_vlm`, embedder, STT, and OCR stay resident (~9 GB); `smart_model` loads on demand and unloads after idle.
-- **Why.** Everything warm is ~26–28 GB of 32 GB, which leaves nothing for Blender or Resolve. The cost is a cold load on the first hard question after a pause; the 1.5 s budget is defined for warm models.
-- **Status:** proposed; numbers confirmed by S3.2.
+- **Why.** Everything warm is ~26–28 GB of weights alone (context caches and CUDA contexts come on top), which leaves nothing for Blender or Resolve.
+- **Cost and mitigation.** The first hard question after a pause pays a cold load. `smart_model` is pre-warmed when the text input opens, push-to-talk is pressed, or a guide starts, and Waddle says "waking up" if it is still loading. The 1.5 s budget is defined for warm models; cold starts are reported separately.
+- **Status:** proposed; the numbers are estimates until S3.2.
 
 ### D-026 vLLM uses `response_format`/`structured_outputs`
 - The brief mentions "guided decoding"; the `guided_*` parameters were removed in vLLM 0.12. One vLLM process per role.
@@ -175,10 +192,69 @@ Status key: `proposed` (not yet built) · `accepted` · `superseded by D-xxx`.
 
 ---
 
+## Privacy and safety narrowing
+
+### D-033 Region-select captures one window ⚠ deviates from VISION
+- The brief says "drag a rectangle over any part of the screen". The rectangle is resolved to the topmost non-Waddle window under it; that window goes through the normal gated capture and the crop is cut in the helper.
+- **Why.** A compositor area grab includes every app in the rectangle, bypasses the per-window blocklist check, and would contain Waddle himself. This keeps one capture verb and one gate.
+- **Effect.** A selection spanning two apps explains the one under most of it; a blocked window under the rectangle means no capture.
+- **Status:** proposed; S8.2 covers Plasma panels.
+
+### D-034 The link is a WebSocket over a Unix socket ⚠ deviates from VISION (stricter)
+- `$XDG_RUNTIME_DIR/waddle/brain.sock` in a `0700` directory, bind-mounted into `waddle-api`; the token remains as a second factor.
+- **Why.** On a TCP port, while the brain is down any local process could bind the port and receive the host's token, frames, and audio; browsers can also reach localhost ports. A user-private socket removes both problems and leaves Waddle with no TCP listeners at all.
+- **Status:** proposed.
+
+### D-035 No `spectacle` fallback ⚠ deviates from VISION
+- **Why.** `spectacle -b` writes an image file (contradicting "frames live in memory only"), runs outside the helper's gate and fixed options, and depending on your Spectacle settings may save to Pictures or copy to the clipboard.
+- **Effect.** The chain is ScreenShot2 → portal window stream → text/voice-only mode with an explanation.
+- **Would change if:** you would rather have it as an explicit opt-in.
+- **Status:** proposed.
+
+### D-037 No click sensing and no global Esc ⚠ deviates from VISION
+- The brief has the highlight clear "on the next click" and Esc stop speech. A read-only Wayland client cannot see clicks outside its own surfaces, and binding Esc globally would take it away from every other app.
+- **Decision.** The highlight clears on a frame change of the target, a focus change, step verification, or a timeout. Speech stops on push-to-talk, a new request, a click on the penguin, tray Mute, or the quiet-mode hotkey; Esc works while a Waddle window has focus.
+- **Status:** proposed.
+
+### D-038 Tutorial translator works from a URL or text you supply ⚠ deviates from VISION (narrows)
+- **Why.** On-screen video is a masked live region and audio is never captured, so Waddle cannot follow a playing video. A page URL or a pasted transcript goes through the normal fetch rules.
+- **Status:** proposed.
+
+### D-039 History stores questions and answers as text
+- The History panel in the brief requires it; the brief also says "no transcripts on disk". Reading the two together: your questions (typed, or transcribed from push-to-talk) and Waddle's answers are stored with configurable retention; audio, frames, and raw screen text are not. History can be set to in-memory only, and nothing is recorded for blocked windows.
+- **Would change if:** you read "no transcripts" as covering spoken questions too — then in-memory-only becomes the default for voice.
+- **Status:** proposed.
+
+### D-040 `waddle forget` forgets everything, guides included
+- Plain `forget` removes history, profile, focus time, positions, guide records, identity cache, doc cache, and the screencast permission, and — after offering an export — the guide library (`--keep-guides` keeps it). `--app <id>` limits it to one app.
+- **Why.** The brief says "forget everything"; a partial default would be a surprise.
+- **Status:** proposed.
+
+### D-041 Fetch and search are not model-addressable
+- The model cannot supply a URL: fetch takes a search-result id or a pack template filled from the normalized version. Search queries are assembled by code with at most one short quoted screen string. Private, loopback, and link-local targets are refused, including after redirects.
+- **Residual.** A short search query reaches SearXNG's upstream engines; injected content could influence a few words of it. Stated in PRIVACY.md.
+- **Status:** proposed.
+
+### D-042 Host tools take typed, validated arguments
+- `inspect_file` takes an opaque handle minted when you drop a file, never a path. `man`/`tldr` take a validated page name. Tool calls must belong to an open request of yours.
+- **Why.** The brain reads the internet and runs models; it must not be able to make the unsandboxed host probe arbitrary paths.
+- **Status:** proposed.
+
+### D-043 Observation subprocesses are sandboxed and fail closed
+- File inspectors, `man`, and allowlisted `--version` calls run under `bwrap` with no network, a read-only view, and resource limits. If the sandbox cannot be created the step is skipped and reported.
+- **Why.** Dropped files are hostile input to parsers with real vulnerability history.
+- **Status:** proposed.
+
+---
+
 ## Process
 
 ### D-031 Runtime-verified claims
 - Everything tagged `SNIP` or `UNVERIFIED` in RESEARCH.md is owned by a named spike in PLAN.md and is not relied on until that spike passes. `waddle doctor` re-checks the machine-specific ones on every run.
+- **Status:** accepted.
+
+### D-044 The design was reviewed before being shown
+- Five independent reviews (read-only/privacy, Wayland feasibility, GPU/performance, security, coverage of the brief), each finding then challenged by a second reviewer. 40 findings survived and were folded in; the largest were the model-controlled egress path (D-019, D-041), the area-capture hole (D-033), the unauthenticated direction of the TCP link (D-034), and Focus mode not actually freeing VRAM (D-017).
 - **Status:** accepted.
 
 ### D-032 `install.sh` never uses root
