@@ -20,5 +20,8 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/waddle_desktop"]
 
+[tool.hatch.build.targets.wheel.force-include]
+"../../kwin/waddle-core.js" = "waddle_desktop/_data/kwin/waddle-core.js"
+
 [tool.uv.sources]
 waddle-core = { workspace = true }

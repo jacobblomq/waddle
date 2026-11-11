@@ -11,7 +11,7 @@ def _prop(name: str, kind: type, notify: Signal) -> Property:
     def getter(self: ThemeObject) -> object:
         return getattr(self.palette, name)
 
-    return Property(kind, getter, notify=notify)  # type: ignore[arg-type]
+    return Property(kind, getter, notify=notify)
 
 
 class ThemeObject(QObject):
@@ -31,18 +31,18 @@ class ThemeObject(QObject):
         return self._p
 
     accent = _prop("accent", str, changed)
-    windowBg = _prop("window_bg", str, changed)  # noqa: N815
-    windowFg = _prop("window_fg", str, changed)  # noqa: N815
-    viewBg = _prop("view_bg", str, changed)  # noqa: N815
-    viewFg = _prop("view_fg", str, changed)  # noqa: N815
-    buttonBg = _prop("button_bg", str, changed)  # noqa: N815
-    buttonFg = _prop("button_fg", str, changed)  # noqa: N815
+    windowBg = _prop("window_bg", str, changed)
+    windowFg = _prop("window_fg", str, changed)
+    viewBg = _prop("view_bg", str, changed)
+    viewFg = _prop("view_fg", str, changed)
+    buttonBg = _prop("button_bg", str, changed)
+    buttonFg = _prop("button_fg", str, changed)
     highlight = _prop("highlight", str, changed)
-    highlightedFg = _prop("highlighted_fg", str, changed)  # noqa: N815
+    highlightedFg = _prop("highlighted_fg", str, changed)
     positive = _prop("positive", str, changed)
     negative = _prop("negative", str, changed)
     neutral = _prop("neutral", str, changed)
     link = _prop("link", str, changed)
-    isDark = _prop("is_dark", bool, changed)  # noqa: N815
-    fontFamily = _prop("font_family", str, changed)  # noqa: N815
-    fontPointSize = _prop("font_point_size", float, changed)  # noqa: N815
+    isDark = _prop("is_dark", bool, changed)
+    fontFamily = _prop("font_family", str, changed)
+    fontPointSize = _prop("font_point_size", float, changed)

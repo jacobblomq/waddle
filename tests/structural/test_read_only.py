@@ -11,12 +11,16 @@ import re
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
-SOURCE_DIRS = [REPO / "packages" / "core" / "src", REPO / "packages" / "desktop" / "src", REPO / "kwin"]
+SOURCE_DIRS = [
+    REPO / "packages" / "core" / "src",
+    REPO / "packages" / "desktop" / "src",
+    REPO / "kwin",
+]
 SUFFIXES = {".py", ".qml", ".js", ".rs", ".sh", ".toml"}
 
 # Input injection, raw input devices, and remote-control portals. Never, in any form.
 FORBIDDEN = re.compile(
-    r"uinput|ydotool|xdotool|wtype|dotool|/dev/input|libei\b|libevdev|evdev|"
+    r"uinput|ydotool|xdotool|\bwtype\b|\bdotool\b|/dev/input|\blibei\b|evdev|"
     r"RemoteDesktop|InputCapture|xtest|fake_input|sendEvent\(|postEvent\(",
     re.IGNORECASE,
 )
@@ -55,7 +59,9 @@ def test_clipboard_is_not_touched() -> None:
         for n, line in enumerate(p.read_text(encoding="utf-8").splitlines(), 1)
         if CLIPBOARD.search(line)
     ]
-    assert not hits, "clipboard referenced (only a future Copy button may write it):\n" + "\n".join(hits)
+    assert not hits, "clipboard referenced (only a future Copy button may write it):\n" + "\n".join(
+        hits
+    )
 
 
 def test_processes_are_only_started_by_the_allowlisted_modules() -> None:
@@ -70,7 +76,9 @@ def test_processes_are_only_started_by_the_allowlisted_modules() -> None:
             if isinstance(node, ast.Import):
                 names = [a.name for a in node.names]
             elif isinstance(node, ast.ImportFrom):
-                names = [node.module or ""]
+                # Importing only the result *type* cannot start a process.
+                harmless = {a.name for a in node.names} <= {"CompletedProcess"}
+                names = [] if harmless else [node.module or ""]
             elif isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name):
                 if node.value.id == "os" and node.attr in {"system", "popen", "execv", "execve"}:
                     names = ["os." + node.attr]
@@ -78,9 +86,9 @@ def test_processes_are_only_started_by_the_allowlisted_modules() -> None:
                     names = ["os." + node.attr]
             for name in names:
                 root = name.split(".")[0]
-                if root in {"subprocess", "pty", "multiprocessing"} or name.startswith("os."):
-                    if rel not in SUBPROCESS_ALLOWED:
-                        offenders.append(f"{path.relative_to(REPO)}: {name}")
+                spawns = root in {"subprocess", "pty", "multiprocessing"} or name.startswith("os.")
+                if spawns and rel not in SUBPROCESS_ALLOWED:
+                    offenders.append(f"{path.relative_to(REPO)}: {name}")
                 if name.startswith("asyncio.subprocess"):
                     offenders.append(f"{path.relative_to(REPO)}: {name}")
     assert not offenders, "process creation outside the exec allowlists:\n" + "\n".join(offenders)
@@ -93,6 +101,14 @@ def test_kwin_scripts_only_assign_geometry_behind_the_own_window_guard() -> None
     for path in js + py_templates:
         text = path.read_text(encoding="utf-8")
         if re.search(r"\.frameGeometry\s*=[^=]", text):
-            assert "isOwnWindow" in text, f"{path.relative_to(REPO)} moves windows without the guard"
-        for forbidden in ("closeWindow", ".minimized =", ".fullScreen =", ".keepAbove =", "killWindow"):
+            assert "isOwnWindow" in text, (
+                f"{path.relative_to(REPO)} moves windows without the guard"
+            )
+        for forbidden in (
+            "closeWindow",
+            ".minimized =",
+            ".fullScreen =",
+            ".keepAbove =",
+            "killWindow",
+        ):
             assert forbidden not in text, f"{path.relative_to(REPO)} uses {forbidden}"

@@ -9,7 +9,7 @@ import sys
 import time
 from pathlib import Path
 
-from PySide6.QtCore import QObject, QSocketNotifier, Qt, QTimer, QUrl
+from PySide6.QtCore import QObject, QRect, QSocketNotifier, Qt, QTimer, QUrl
 from PySide6.QtGui import QColor, QRegion, QSurfaceFormat
 from PySide6.QtQuick import QQuickView
 from PySide6.QtWidgets import QApplication
@@ -39,7 +39,14 @@ from waddle_desktop.ui.dodge import DodgeMachine
 from waddle_desktop.ui.theme_object import ThemeObject
 from waddle_desktop.ui.tray import Tray, TrayState
 
-QML_DIR = Path(waddle_desktop.__file__).parent / "qml"
+_PACKAGE_DIR = Path(waddle_desktop.__file__).parent
+QML_DIR = _PACKAGE_DIR / "qml"
+
+
+def data_base() -> Path:
+    """The directory holding ``kwin/``: packaged data in a wheel, the repo root from source."""
+    packaged = _PACKAGE_DIR / "_data"
+    return packaged if (packaged / "kwin").is_dir() else _PACKAGE_DIR.parents[3]
 
 
 def _now_ms() -> int:
@@ -52,7 +59,7 @@ class PenguinView(QQuickView):
     def __init__(self, bridge: Bridge):
         super().__init__()
         self._bridge = bridge
-        self._rects: list[object] = []
+        self._rects: list[QRect] = []
         self.setTitle(PENGUIN_WINDOW_TITLE)
         self.setColor(QColor(Qt.GlobalColor.transparent))
         self.setFlags(
@@ -66,7 +73,7 @@ class PenguinView(QQuickView):
         bridge.dragRequested.connect(self.startSystemMove)
         self.visibleChanged.connect(self._apply_mask)
 
-    def _set_rects(self, rects: list[object]) -> None:
+    def _set_rects(self, rects: list[QRect]) -> None:
         self._rects = rects
         self._apply_mask()
 
@@ -75,12 +82,17 @@ class PenguinView(QQuickView):
         # (QTBUG-62638). An empty region would mean "whole window", so keep a 1px stub.
         region = QRegion()
         for rect in self._rects:
-            region = region.united(rect)  # type: ignore[arg-type]
+            region = region.united(rect)
         if region.isEmpty():
             region = QRegion(0, 0, 1, 1)
         self.setMask(region)
 
-    def exposeEvent(self, event: object) -> None:  # noqa: N802
+    def teardown(self) -> None:
+        """Destroy the QML scene while the bridge it binds to is still alive."""
+        self.hide()
+        self.setSource(QUrl())
+
+    def exposeEvent(self, event: object) -> None:
         super().exposeEvent(event)  # type: ignore[arg-type]
         self._bridge.set_view(running=self.isExposed())
 
@@ -150,7 +162,7 @@ class WaddleApp(QObject):
         self._io = IoThread()
         self._kwin = KWinLink(
             paths.runtime_dir,
-            core_script_path(),
+            core_script_path(data_base()),
             on_own_window=self._events.ownWindow.emit,
             on_outputs=self._events.outputs.emit,
             on_status=self._events.kwinStatus.emit,
@@ -173,9 +185,12 @@ class WaddleApp(QObject):
 
     def shutdown(self) -> None:
         self._watcher.stop()
+        self._view.teardown()
+        if self._ask is not None:
+            self._ask.setSource(QUrl())
         try:
             self._io.submit(self._kwin.stop()).result(timeout=2.0)
-        except Exception:  # noqa: BLE001 - shutting down; nothing useful to do with it
+        except Exception:
             log.warning("kwin.stop_failed")
         self._io.stop()
         self._positions.close()

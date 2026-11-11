@@ -30,16 +30,16 @@ def qml_engine(qapp: Any) -> QQmlEngine:
 @pytest.fixture
 def load_qml(qml_engine: QQmlEngine) -> Callable[..., QObject]:
     """Create a component from ``qml/<name>`` with initial properties; fail on any QML error."""
-    created: list[QObject] = []
+    created: list[tuple[QQmlComponent, QObject]] = []  # keep the component alive too
 
     def _load(name: str, **props: Any) -> QObject:
         component = QQmlComponent(qml_engine, QUrl.fromLocalFile(str(QML_DIR / name)))
         assert component.isReady(), [e.toString() for e in component.errors()]
         obj = component.createWithInitialProperties(props)
         assert obj is not None, [e.toString() for e in component.errors()]
-        created.append(obj)
+        created.append((component, obj))
         return obj
 
     yield _load  # type: ignore[misc]
-    for obj in created:
+    for _component, obj in created:
         obj.deleteLater()

@@ -700,6 +700,10 @@ requires-dist = [
 name = "waddle-workspace"
 version = "0.1.0"
 source = { virtual = "." }
+dependencies = [
+    { name = "waddle-core" },
+    { name = "waddle-desktop" },
+]
 
 [package.dev-dependencies]
 dev = [
@@ -708,11 +712,13 @@ dev = [
     { name = "pytest" },
     { name = "pytest-qt" },
     { name = "ruff" },
-    { name = "waddle-core" },
-    { name = "waddle-desktop" },
 ]
 
 [package.metadata]
+requires-dist = [
+    { name = "waddle-core", editable = "packages/core" },
+    { name = "waddle-desktop", editable = "packages/desktop" },
+]
 
 [package.metadata.requires-dev]
 dev = [
@@ -721,6 +727,4 @@ dev = [
     { name = "pytest", specifier = ">=9.0" },
     { name = "pytest-qt", specifier = ">=4.5" },
     { name = "ruff", specifier = ">=0.17" },
-    { name = "waddle-core", editable = "packages/core" },
-    { name = "waddle-desktop", editable = "packages/desktop" },
 ]

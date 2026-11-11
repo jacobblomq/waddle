@@ -95,7 +95,7 @@ def cmd_rule(args: argparse.Namespace) -> int:
 
     paths = _paths()
     config_home = paths.config_dir.parent
-    installer = RuleInstaller(config_home / "kwinrulesrc", paths.install_manifest)
+    installer = RuleInstaller(config_home / "kwinrulesrc", paths.data_dir / "kwin-rules.json")
     if args.action == "status":
         status = installer.status()
         print("installed" if status.installed else "not installed")

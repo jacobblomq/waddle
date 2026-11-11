@@ -18,18 +18,26 @@ Item {
     signal action(string name) // "back", "skip", "done", "show", "why"
     signal submitted(string text)
 
-    readonly property var steps: guide && guide.steps ? guide.steps : []
+    // Anything that is not a list of step objects renders as "no guide".
+    readonly property var steps: guide && isList(guide.steps) ? guide.steps : []
     readonly property int currentIndex: Math.max(0, Math.min(steps.length - 1, guide ? Number(guide.current) || 0 : 0))
-    readonly property var step: steps.length > 0 ? steps[currentIndex] : null
+    readonly property var step: steps.length > 0 && steps[currentIndex] && typeof steps[currentIndex] === "object"
+                                ? steps[currentIndex] : null
     readonly property var pieces: piecesOf(step)
     readonly property real pad: Math.round(s.u * 1.75)
 
+    // Lists from Python arrive as sequence wrappers, for which Array.isArray() is false.
+    function isList(value) {
+        return value !== null && typeof value === "object" && typeof value.length === "number"
+    }
     // Flatten segments into flowable pieces: one per word, one per key, "+" between keys.
     function piecesOf(step) {
         const out = []
-        const segments = step && step.segments ? step.segments : []
+        const segments = step && isList(step.segments) ? step.segments : []
         for (let i = 0; i < segments.length; i++) {
-            const keys = segments[i].keys || []
+            if (!segments[i] || typeof segments[i] !== "object")
+                continue
+            const keys = isList(segments[i].keys) ? segments[i].keys : []
             for (let k = 0; k < keys.length; k++) {
                 if (k > 0)
                     out.push({ key: false, text: "+" })

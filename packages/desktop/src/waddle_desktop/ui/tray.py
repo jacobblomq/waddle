@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from enum import StrEnum
 
-from PySide6.QtCore import QObject, QPointF, QRectF, Qt, Signal
+from PySide6.QtCore import QObject, QPointF, QRectF, Qt, Signal, SignalInstance
 from PySide6.QtGui import QAction, QColor, QIcon, QPainter, QPainterPath, QPixmap
 from PySide6.QtWidgets import QMenu, QSystemTrayIcon
 
@@ -59,12 +59,12 @@ def paint_icon(state: TrayState, accent: str, size: int = 64) -> QPixmap:
 
 
 class Tray(QObject):
-    pauseToggled = Signal(bool)  # noqa: N815
-    quietToggled = Signal(bool)  # noqa: N815
-    focusToggled = Signal(bool)  # noqa: N815
-    visibilityToggled = Signal(bool)  # noqa: N815  True = show Waddle
-    quitRequested = Signal()  # noqa: N815
-    demoRequested = Signal(str)  # noqa: N815
+    pauseToggled = Signal(bool)
+    quietToggled = Signal(bool)
+    focusToggled = Signal(bool)
+    visibilityToggled = Signal(bool)
+    quitRequested = Signal()
+    demoRequested = Signal(str)
 
     def __init__(self, accent: str, *, demo: bool = False, parent: QObject | None = None):
         super().__init__(parent)
@@ -94,11 +94,11 @@ class Tray(QObject):
         self._icon.setContextMenu(self._menu)
         self._refresh()
 
-    def _check(self, text: str, signal: Signal, *, checked: bool = False) -> QAction:  # type: ignore[valid-type]
+    def _check(self, text: str, signal: SignalInstance, *, checked: bool = False) -> QAction:
         action = self._menu.addAction(text)
         action.setCheckable(True)
         action.setChecked(checked)
-        action.toggled.connect(signal)  # type: ignore[attr-defined]
+        action.toggled.connect(signal)
         return action
 
     def _later(self, text: str, phase: str) -> QAction:

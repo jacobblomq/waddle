@@ -18,8 +18,9 @@ Item {
     property real lookX: 0
     property real lookY: 0
 
-    readonly property rect bodyRect: Qt.rect(stage.x + 12 * stage.scale, stage.y + 18 * stage.scale,
-                                             136 * stage.scale, 166 * stage.scale)
+    // Covers the resting figure including the flipper tips (which reach x = 7 and x = 153).
+    readonly property rect bodyRect: Qt.rect(stage.x + 6 * stage.scale, stage.y + 18 * stage.scale,
+                                             148 * stage.scale, 166 * stage.scale)
     // A point (item coordinates) that is always plain scarf, for render tests.
     readonly property point scarfProbe: Qt.point(stage.x + 80 * stage.scale,
                                                  stage.y + 112.5 * stage.scale)
@@ -47,7 +48,8 @@ Item {
     })
     readonly property string knownMood: moods[mood] !== undefined ? mood : "idle"
     readonly property bool active: running && motionScale > 0
-    readonly property real ms: Math.max(0, motionScale)
+    // Duration factor. At 0 nothing runs, so keep durations untouched rather than retime to 0.
+    readonly property real ms: motionScale > 0 ? motionScale : 1
     readonly property bool eyesOpenMood: ["celebrate", "eyes-closed", "sleeping", "napping-brain"]
                                          .indexOf(knownMood) < 0
     readonly property bool asleep: knownMood === "sleeping" || knownMood === "napping-brain"
@@ -70,6 +72,7 @@ Item {
     property real hopY: 0        // celebrate
     property real knock: 0       // alert: 0..1 flipper swing
     property int blinkCount: 0
+    property bool stateKick: false
 
     QtObject {
         id: pose
@@ -91,21 +94,36 @@ Item {
         if (knownMood !== "celebrate" && knownMood !== "alert")
             return
         if (!active)
-            Qt.callLater(root.transientFinished)
+            Qt.callLater(root.finishStillTransient)
         else if (knownMood === "celebrate")
             hop.start()
         else
             knockAnim.start()
     }
 
+    // Deferred emit for the no-motion case; skipped if the mood was left (or motion came back,
+    // in which case the animation plays and emits) before the event loop got here.
+    function finishStillTransient() {
+        if (!active && (knownMood === "celebrate" || knownMood === "alert"))
+            root.transientFinished()
+    }
+
     implicitWidth: 160
     implicitHeight: 190
-    state: knownMood
+    state: stateKick ? "" : knownMood
     onKnownMoodChanged: playTransient()
     onActiveChanged: {
+        // Set here rather than bound, so it is certainly up to date before the kick below.
+        poseTransition.enabled = active
         if (!active) {
             blinkAnim.stop()
             footTap.stop()
+            // A pose transition may be mid-flight. Re-entering the state with transitions
+            // disabled stops it and snaps the pose to its final values.
+            if (poseTransition.running) {
+                stateKick = true
+                stateKick = false
+            }
         }
         playTransient()
     }
@@ -118,19 +136,19 @@ Item {
         State { name: "idle" },
         State {
             name: "listening"
-            PropertyChanges { pose.lean: 6; pose.glow: 1; pose.flipL: 62 }
+            PropertyChanges { pose.lean: 6; pose.glow: 1; pose.flipL: 150 }
         },
         State { name: "watching"; PropertyChanges { pose.flipL: 8; pose.flipR: 8 } },
         State {
             name: "thinking"
             PropertyChanges { pose.book: 1; pose.flipL: -42; pose.flipR: -42 }
         },
-        State { name: "speaking"; PropertyChanges { pose.flipL: 34; pose.flipR: 34 } },
+        State { name: "speaking"; PropertyChanges { pose.flipL: 26; pose.flipR: 26 } },
         State {
             name: "celebrate"
-            PropertyChanges { pose.eyeOpen: 0; pose.flipL: 138; pose.flipR: 138 }
+            PropertyChanges { pose.eyeOpen: 0; pose.flipL: 155; pose.flipR: 155 }
         },
-        State { name: "alert"; PropertyChanges { pose.lean: 4; pose.flipR: 150 } },
+        State { name: "alert"; PropertyChanges { pose.lean: -3; pose.flipR: 160 } },
         State {
             name: "confused"
             PropertyChanges { pose.lean: -9; pose.question: 1; pose.flipR: 40 }

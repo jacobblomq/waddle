@@ -17,9 +17,9 @@ from PySide6.QtCore import QObject, Signal
 class HostEvents(QObject):
     """Signals emitted from the I/O thread; Qt delivers them queued on the UI thread."""
 
-    ownWindow = Signal(object)  # noqa: N815  kwin.types.OwnWindow
+    ownWindow = Signal(object)
     outputs = Signal(object, object)  # list[OutputInfo], active output name | None
-    kwinStatus = Signal(bool, str)  # noqa: N815
+    kwinStatus = Signal(bool, str)
 
 
 class IoThread:

@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Waddle — a read-only, on-screen software tutor for Linux"
 requires-python = ">=3.13"
 license = "GPL-3.0-or-later"
-dependencies = []
+dependencies = ["waddle-core", "waddle-desktop"]
 
 [tool.uv]
 package = false
@@ -19,8 +19,6 @@ dev = [
     "ruff>=0.17",
     "mypy>=2.0",
     "pre-commit>=4.0",
-    "waddle-core",
-    "waddle-desktop",
 ]
 
 [tool.uv.sources]
@@ -31,6 +29,7 @@ waddle-desktop = { workspace = true }
 line-length = 100
 target-version = "py313"
 src = ["packages/core/src", "packages/desktop/src"]
+extend-exclude = ["docs"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "SIM", "C4", "PTH", "RUF", "S", "T20"]

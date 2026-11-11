@@ -3,15 +3,28 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator
+from pathlib import Path
 from typing import Any
 
 import pytest
-from PySide6.QtCore import QObject, QPoint, QPointF, Qt, QtMsgType, qInstallMessageHandler
-from PySide6.QtGui import QColor, QImage
+from PySide6.QtCore import (
+    QCoreApplication,
+    QEvent,
+    QObject,
+    QPoint,
+    QPointF,
+    Qt,
+    QtMsgType,
+    QUrl,
+    qInstallMessageHandler,
+)
+from PySide6.QtGui import QColor, QImage, QKeyEvent
+from PySide6.QtQml import QQmlComponent, QQmlEngine
 from PySide6.QtQuick import QQuickItem, QQuickWindow
-from PySide6.QtTest import QSignalSpy, QTest
-from waddle_core.guide import mock_guide
+from PySide6.QtTest import QTest
 
+import waddle_desktop
+from waddle_core.guide import mock_guide
 from waddle_desktop.theme.palette import FALLBACK_DARK, FALLBACK_LIGHT
 from waddle_desktop.ui.theme_object import ThemeObject
 
@@ -25,6 +38,29 @@ BACKDROP = QColor("#ff00ff")
 @pytest.fixture
 def theme(qapp: Any) -> ThemeObject:
     return ThemeObject(FALLBACK_LIGHT)
+
+
+@pytest.fixture
+def load_qml(qml_engine: QQmlEngine) -> Iterator[Loader]:
+    """Like conftest's ``load_qml``, but keeps each QQmlComponent alive for the whole test.
+
+    PySide invalidates the wrapper of a created object as soon as its component is collected,
+    so the shared fixture's objects are unusable once it returns.
+    """
+    qml_dir = Path(waddle_desktop.__file__).parent / "qml"
+    alive: list[tuple[QQmlComponent, QObject]] = []
+
+    def _load(name: str, **props: Any) -> QObject:
+        component = QQmlComponent(qml_engine, QUrl.fromLocalFile(str(qml_dir / name)))
+        assert component.isReady(), [e.toString() for e in component.errors()]
+        obj = component.createWithInitialProperties(props)
+        assert obj is not None, [e.toString() for e in component.errors()]
+        alive.append((component, obj))
+        return obj
+
+    yield _load
+    for _component, obj in alive:
+        obj.deleteLater()
 
 
 @pytest.fixture(autouse=True)
@@ -51,11 +87,14 @@ def show(qtbot: Any) -> Iterator[Show]:
         assert isinstance(obj, QQuickItem)
         window = QQuickWindow()
         window.setColor(BACKDROP)
-        window.resize(max(60, int(obj.width()) + 20), max(40, int(obj.height()) + 20))
+        window.resize(400, 400)
         obj.setParentItem(window.contentItem())
         obj.setPosition(QPointF(10, 10))
         window.show()
         qtbot.waitExposed(window)
+        qtbot.wait(30)  # layouts settle on the first polish
+        window.resize(max(60, int(obj.width()) + 20), max(40, int(obj.height()) + 20))
+        qtbot.wait(10)
         windows.append(window)
         return window
 
@@ -83,6 +122,13 @@ def one(root: QObject, name: str) -> QQuickItem:
 def click(window: QQuickWindow, item: QQuickItem) -> None:
     center = item.mapToScene(QPointF(item.width() / 2, item.height() / 2)).toPoint()
     QTest.mouseClick(window, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, center)
+
+
+def record(obj: QObject, signal: str) -> list[Any]:
+    """Connect to a QML signal; the list receives its first argument (or None) per emission."""
+    hits: list[Any] = []
+    getattr(obj, signal).connect(lambda *args: hits.append(args[0] if args else None))
+    return hits
 
 
 def grab(window: QQuickWindow) -> QImage:
@@ -195,11 +241,11 @@ def test_bubble_more_and_close_are_real_clicks(
 ) -> None:
     bubble = load_qml("Bubble.qml", theme=theme, text=LONG)
     window = show(bubble)
-    more, dismissed = QSignalSpy(bubble, "2moreClicked()"), QSignalSpy(bubble, "2dismissed()")
+    more, dismissed = record(bubble, "moreClicked"), record(bubble, "dismissed")
     click(window, one(bubble, "more"))
-    assert (more.count(), dismissed.count()) == (1, 0)
+    assert (len(more), len(dismissed)) == (1, 0)
     click(window, one(bubble, "close"))
-    assert (more.count(), dismissed.count()) == (1, 1)
+    assert (len(more), len(dismissed)) == (1, 1)
     assert one(bubble, "close").property("accessibleText") == "Dismiss"
 
 
@@ -241,30 +287,38 @@ def test_card_shows_progress_and_earlier_steps(load_qml: Loader, theme: ThemeObj
     assert "Step 2 of 5" in spoken and "click the red sphere icon." in spoken
 
 
-def test_card_renders_shortcuts_as_keycaps(load_qml: Loader, theme: ThemeObject) -> None:
+def test_card_renders_shortcuts_as_keycaps(
+    load_qml: Loader, show: Show, theme: ThemeObject
+) -> None:
     guide = mock_guide().model_copy(update={"current": 0}).to_qml()
     card = load_qml("GuideCard.qml", theme=theme, guide=guide)
     assert isinstance(card, QQuickItem)
+    show(card)
     caps = descendants(card, "keycap")
     assert [c.property("text") for c in caps] == ["Shift", "A"]
     words = [w.property("text") for w in descendants(card, "word")]
     assert words == ["Press", "+", "and", "choose", "Mesh", "→", "Cube."]
-    assert one(card, "instruction").height() > 0
+    flow = one(card, "instruction")
+    assert flow.height() >= caps[0].height() > 0
+    assert all(c.x() >= 0 and c.x() + c.width() <= flow.width() for c in caps)  # wrapped inside
     assert "Press Shift+A and choose" in str(card.property("accessibleText"))
     assert descendants(card, "doneStep") == []
     assert one(card, "btnBack").isEnabled() is False  # first step
 
 
-def test_card_why_text_follows_show_why(load_qml: Loader, theme: ThemeObject) -> None:
+def test_card_why_text_follows_show_why(
+    load_qml: Loader, show: Show, theme: ThemeObject, qtbot: Any
+) -> None:
     card = load_qml("GuideCard.qml", theme=theme, guide=mock_guide().to_qml())
     assert isinstance(card, QQuickItem)
+    show(card)
     why = one(card, "why")
     assert why.property("text") == "Materials decide how a surface reacts to light."
     assert why.isVisible() is False
     before = card.implicitHeight()
     card.setProperty("showWhy", True)
     assert why.isVisible() is True
-    assert card.implicitHeight() > before
+    qtbot.waitUntil(lambda: card.implicitHeight() > before, timeout=2000)
 
 
 @pytest.mark.parametrize(
@@ -282,8 +336,7 @@ def test_card_button_click_emits_action(
 ) -> None:
     card = load_qml("GuideCard.qml", theme=theme, guide=mock_guide().to_qml())
     window = show(card)
-    actions: list[str] = []
-    card.action.connect(actions.append)  # type: ignore[attr-defined]
+    actions = record(card, "action")
     item = one(card, button)
     assert item.property("accessibleText")
     assert item.property("activeFocusOnTab") is True
@@ -297,8 +350,7 @@ def test_card_disabled_back_ignores_clicks(
     guide = mock_guide().model_copy(update={"current": 0}).to_qml()
     card = load_qml("GuideCard.qml", theme=theme, guide=guide)
     window = show(card)
-    actions: list[str] = []
-    card.action.connect(actions.append)  # type: ignore[attr-defined]
+    actions = record(card, "action")
     click(window, one(card, "btnBack"))
     assert actions == []
 
@@ -308,8 +360,7 @@ def test_card_buttons_work_from_the_keyboard(
 ) -> None:
     card = load_qml("GuideCard.qml", theme=theme, guide=mock_guide().to_qml())
     window = show(card)
-    actions: list[str] = []
-    card.action.connect(actions.append)  # type: ignore[attr-defined]
+    actions = record(card, "action")
     window.requestActivate()
     one(card, "btnShow").forceActiveFocus()
     qtbot.waitUntil(lambda: one(card, "btnShow").hasActiveFocus(), timeout=2000)
@@ -320,20 +371,63 @@ def test_card_buttons_work_from_the_keyboard(
     assert actions == ["show", "why"]
 
 
+def test_card_held_key_fires_a_button_only_once(
+    load_qml: Loader, show: Show, theme: ThemeObject, qtbot: Any
+) -> None:
+    card = load_qml("GuideCard.qml", theme=theme, guide=mock_guide().to_qml())
+    window = show(card)
+    actions = record(card, "action")
+    window.requestActivate()
+    one(card, "btnDone").forceActiveFocus()
+    qtbot.waitUntil(lambda: one(card, "btnDone").hasActiveFocus(), timeout=2000)
+    none = Qt.KeyboardModifier.NoModifier
+    for repeat in (False, True, True, True):  # one press, then the keyboard's auto-repeat
+        press = QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Return, none, "\r", repeat)
+        QCoreApplication.sendEvent(window, press)
+    assert actions == ["done"]  # holding Enter must not skip through several steps
+
+
+@pytest.mark.parametrize(
+    "guide",
+    [
+        {"steps": [None, None], "current": 1},
+        {"steps": "abc"},
+        {"steps": {"a": 1}},
+        5,
+    ],
+    ids=str,
+)
+def test_card_treats_malformed_guides_as_no_guide(
+    load_qml: Loader, theme: ThemeObject, guide: Any
+) -> None:
+    card = load_qml("GuideCard.qml", theme=theme, guide=guide)
+    assert isinstance(card, QQuickItem)
+    assert not card.isVisible() and card.implicitHeight() == 0
+
+
+def test_card_skips_malformed_segments(load_qml: Loader, theme: ThemeObject) -> None:
+    step = {"title": "Render", "segments": [None, {"text": "Press"}, {"keys": "F12"}, 7]}
+    card = load_qml("GuideCard.qml", theme=theme, guide={"goal": "g", "steps": [step]})
+    assert isinstance(card, QQuickItem)
+    assert card.isVisible() and card.implicitHeight() > 0
+    assert [w.property("text") for w in descendants(card, "word")] == ["Press"]
+    assert descendants(card, "keycap") == []  # keys must be a list, not a string
+
+
 def test_card_input_submits_on_enter_and_clears(
     load_qml: Loader, show: Show, theme: ThemeObject, qtbot: Any
 ) -> None:
     card = load_qml("GuideCard.qml", theme=theme, guide=mock_guide().to_qml())
     window = show(card)
-    submitted: list[str] = []
-    card.submitted.connect(submitted.append)  # type: ignore[attr-defined]
+    submitted = record(card, "submitted")
     field = one(card, "input")
     window.requestActivate()
     click(window, field)
     qtbot.waitUntil(field.hasActiveFocus, timeout=2000)
     QTest.keyClick(window, Qt.Key.Key_Return)  # empty: nothing to send
     assert submitted == []
-    QTest.keyClicks(window, "where is roughness")
+    for char in "where is roughness":
+        QTest.keyClick(window, char)  # type: ignore[call-overload]
     assert field.property("text") == "where is roughness"
     QTest.keyClick(window, Qt.Key.Key_Return)
     assert submitted == ["where is roughness"]
@@ -404,9 +498,9 @@ def test_pill_click_emits_clicked(load_qml: Loader, show: Show, theme: ThemeObje
     pill = load_qml("StepPill.qml", theme=theme, text="2/5 · Open the Material tab")
     assert isinstance(pill, QQuickItem)
     window = show(pill)
-    spy = QSignalSpy(pill, "2clicked()")
+    spy = record(pill, "clicked")
     click(window, pill)
-    assert spy.count() == 1
+    assert len(spy) == 1
 
 
 # --- WButton ---------------------------------------------------------------------------------
@@ -416,13 +510,13 @@ def test_button_click_and_disabled_look(load_qml: Loader, show: Show, theme: The
     button = load_qml("WButton.qml", theme=theme, text="Skip")
     assert isinstance(button, QQuickItem)
     window = show(button)
-    spy = QSignalSpy(button, "2clicked()")
+    spy = record(button, "clicked")
     click(window, button)
-    assert spy.count() == 1
+    assert len(spy) == 1
     enabled_look = grab(window)
     button.setEnabled(False)
     click(window, button)
-    assert spy.count() == 1
+    assert len(spy) == 1
     assert grab(window) != enabled_look
 
 

@@ -89,7 +89,9 @@ class DemoDriver(QObject):
             return
         if action == "show":
             self._bridge.set_card_open(False)
-            self.say("In demo mode I can't point at things yet. That arrives with the guide engine.")
+            self.say(
+                "In demo mode I can't point at things yet. That arrives with the guide engine."
+            )
             return
         was_last = guide.current >= guide.total - 1
         self._bridge.set_show_why(False)

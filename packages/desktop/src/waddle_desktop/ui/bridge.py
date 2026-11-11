@@ -12,23 +12,23 @@ from waddle_desktop.ui.theme_object import ThemeObject
 
 
 class Bridge(QObject):
-    moodChanged = Signal()  # noqa: N815
-    viewChanged = Signal()  # noqa: N815  (scale, motion, running)
-    bubbleChanged = Signal()  # noqa: N815
-    guideChanged = Signal()  # noqa: N815
-    dodgedChanged = Signal()  # noqa: N815
-    voiceChanged = Signal()  # noqa: N815
+    moodChanged = Signal()
+    viewChanged = Signal()
+    bubbleChanged = Signal()
+    guideChanged = Signal()
+    dodgedChanged = Signal()
+    voiceChanged = Signal()
 
     # QML -> Python
-    inputRectsChanged = Signal(list)  # noqa: N815  list[QRect], window coordinates
-    dragRequested = Signal()  # noqa: N815
-    bodyHoverChanged = Signal(bool)  # noqa: N815
-    bodyPressed = Signal()  # noqa: N815
-    bodyClicked = Signal()  # noqa: N815
-    guideActionRequested = Signal(str)  # noqa: N815
-    textSubmitted = Signal(str)  # noqa: N815
-    askRequested = Signal()  # noqa: N815
-    transientFinished = Signal()  # noqa: N815
+    inputRectsChanged = Signal(list)
+    dragRequested = Signal()
+    bodyHoverChanged = Signal(bool)
+    bodyPressed = Signal()
+    bodyClicked = Signal()
+    guideActionRequested = Signal(str)
+    textSubmitted = Signal(str)
+    askRequested = Signal()
+    transientFinished = Signal()
 
     def __init__(self, theme: ThemeObject, parent: QObject | None = None):
         super().__init__(parent)
@@ -130,19 +130,19 @@ class Bridge(QObject):
 
     # ---- properties read by QML ------------------------------------------------------
 
-    theme = Property(QObject, lambda self: self._theme, constant=True)  # type: ignore[arg-type]
-    mood = Property(str, lambda self: self._mood.value, notify=moodChanged)  # type: ignore[arg-type]
-    sizeScale = Property(float, lambda self: self._size_scale, notify=viewChanged)  # type: ignore[arg-type]  # noqa: N815
-    motionScale = Property(float, lambda self: self._motion_scale, notify=viewChanged)  # type: ignore[arg-type]  # noqa: N815
-    running = Property(bool, lambda self: self._running, notify=viewChanged)  # type: ignore[arg-type]
-    bubbleMaxLines = Property(int, lambda self: self._bubble_max_lines, notify=viewChanged)  # type: ignore[arg-type]  # noqa: N815
-    bubbleText = Property(str, lambda self: self._bubble_text, notify=bubbleChanged)  # type: ignore[arg-type]  # noqa: N815
-    bubbleExpanded = Property(bool, lambda self: self._bubble_expanded, notify=bubbleChanged)  # type: ignore[arg-type]  # noqa: N815
-    cardOpen = Property(bool, lambda self: self._card_open, notify=guideChanged)  # type: ignore[arg-type]  # noqa: N815
-    showWhy = Property(bool, lambda self: self._show_why, notify=guideChanged)  # type: ignore[arg-type]  # noqa: N815
-    dodged = Property(bool, lambda self: self._dodged, notify=dodgedChanged)  # type: ignore[arg-type]
-    mouthOpen = Property(float, lambda self: self._mouth_open, notify=voiceChanged)  # type: ignore[arg-type]  # noqa: N815
-    micLevel = Property(float, lambda self: self._mic_level, notify=voiceChanged)  # type: ignore[arg-type]  # noqa: N815
+    theme = Property(QObject, lambda self: self._theme, constant=True)
+    mood = Property(str, lambda self: self._mood.value, notify=moodChanged)
+    sizeScale = Property(float, lambda self: self._size_scale, notify=viewChanged)
+    motionScale = Property(float, lambda self: self._motion_scale, notify=viewChanged)
+    running = Property(bool, lambda self: self._running, notify=viewChanged)
+    bubbleMaxLines = Property(int, lambda self: self._bubble_max_lines, notify=viewChanged)
+    bubbleText = Property(str, lambda self: self._bubble_text, notify=bubbleChanged)
+    bubbleExpanded = Property(bool, lambda self: self._bubble_expanded, notify=bubbleChanged)
+    cardOpen = Property(bool, lambda self: self._card_open, notify=guideChanged)
+    showWhy = Property(bool, lambda self: self._show_why, notify=guideChanged)
+    dodged = Property(bool, lambda self: self._dodged, notify=dodgedChanged)
+    mouthOpen = Property(float, lambda self: self._mouth_open, notify=voiceChanged)
+    micLevel = Property(float, lambda self: self._mic_level, notify=voiceChanged)
 
     def _guide_qml(self) -> Any:
         return None if self._guide is None else self._guide.to_qml()
@@ -156,12 +156,12 @@ class Bridge(QObject):
         index = min(g.current, g.total - 1)
         return f"{index + 1}/{g.total} · {g.steps[index].title}"
 
-    pillText = Property(str, _pill_text, notify=guideChanged)  # type: ignore[arg-type]  # noqa: N815
+    pillText = Property(str, _pill_text, notify=guideChanged)
 
     # ---- slots called by QML ---------------------------------------------------------
 
     @Slot(list)
-    def setInputRects(self, rects: list[Any]) -> None:  # noqa: N802
+    def setInputRects(self, rects: list[Any]) -> None:
         out: list[QRect] = []
         for r in rects:
             if isinstance(r, QRectF | QRect):
@@ -171,48 +171,48 @@ class Bridge(QObject):
         self.inputRectsChanged.emit(out)
 
     @Slot()
-    def startDrag(self) -> None:  # noqa: N802
+    def startDrag(self) -> None:
         self.dragRequested.emit()
 
     @Slot(bool)
-    def bodyHover(self, inside: bool) -> None:  # noqa: N802
+    def bodyHover(self, inside: bool) -> None:
         self.bodyHoverChanged.emit(inside)
 
     @Slot()
-    def bodyPress(self) -> None:  # noqa: N802
+    def bodyPress(self) -> None:
         self.bodyPressed.emit()
 
     @Slot()
-    def bodyClick(self) -> None:  # noqa: N802
+    def bodyClick(self) -> None:
         self.bodyClicked.emit()
 
     @Slot(str)
-    def guideAction(self, name: str) -> None:  # noqa: N802
+    def guideAction(self, name: str) -> None:
         if name in {"back", "skip", "done", "show", "why"}:
             self.guideActionRequested.emit(name)
 
     @Slot(str)
-    def submitText(self, text: str) -> None:  # noqa: N802
+    def submitText(self, text: str) -> None:
         text = text.strip()
         if text:
             self.textSubmitted.emit(text[:4000])
 
     @Slot()
-    def toggleBubble(self) -> None:  # noqa: N802
+    def toggleBubble(self) -> None:
         self.set_bubble(self._bubble_text, expanded=not self._bubble_expanded)
 
     @Slot()
-    def dismissBubble(self) -> None:  # noqa: N802
+    def dismissBubble(self) -> None:
         self.set_bubble("")
 
     @Slot()
-    def openCard(self) -> None:  # noqa: N802
+    def openCard(self) -> None:
         self.set_card_open(True)
 
     @Slot()
-    def requestAsk(self) -> None:  # noqa: N802
+    def requestAsk(self) -> None:
         self.askRequested.emit()
 
     @Slot()
-    def transientDone(self) -> None:  # noqa: N802
+    def transientDone(self) -> None:
         self.transientFinished.emit()

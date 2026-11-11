@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Waddle
+Comment=A read-only, on-screen software tutor
+Exec=@WADDLE_BIN@ start
+Icon=help-hint
+Terminal=false
+Categories=Utility;Education;
+StartupNotify=false
+X-KDE-StartupNotify=false
+NoDisplay=false

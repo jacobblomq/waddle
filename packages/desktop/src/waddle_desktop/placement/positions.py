@@ -62,9 +62,7 @@ class PositionStore:
         self._db.commit()
 
     def load(self, output: Rect, name: str) -> tuple[int, int] | None:
-        row = self._db.execute(
-            "SELECT dx, dy FROM positions WHERE output = ?", (name,)
-        ).fetchone()
+        row = self._db.execute("SELECT dx, dy FROM positions WHERE output = ?", (name,)).fetchone()
         return None if row is None else (output.x + int(row[0]), output.y + int(row[1]))
 
     def forget(self) -> None:
