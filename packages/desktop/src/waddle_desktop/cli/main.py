@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import fcntl
 import os
 import signal
 import sys
@@ -18,13 +19,27 @@ def _paths() -> WaddlePaths:
 
 
 def running_pid(paths: WaddlePaths) -> int | None:
-    """PID of the running desktop process, verified against /proc so a stale file is ignored."""
+    """PID of the running desktop process, or None.
+
+    Waddle holds an exclusive lock on its pid file for as long as it lives. If we can take
+    the lock, nobody is running and the file is stale, whatever pid it names.
+    """
     try:
-        pid = int(paths.pid_file.read_text().strip())
-        cmdline = Path(f"/proc/{pid}/cmdline").read_bytes()
-    except (OSError, ValueError):
+        fd = os.open(paths.pid_file, os.O_RDWR | os.O_CLOEXEC)
+    except OSError:
         return None
-    return pid if b"waddle" in cmdline else None
+    try:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            try:
+                return int(os.read(fd, 32).decode().strip())
+            except ValueError:
+                return None
+        fcntl.flock(fd, fcntl.LOCK_UN)
+        return None
+    finally:
+        os.close(fd)
 
 
 def _pss_mb(pid: int) -> float | None:
@@ -70,7 +85,11 @@ def cmd_stop(_: argparse.Namespace) -> int:
     if pid is None:
         print("Waddle is not running.")
         return 0
-    os.kill(pid, signal.SIGTERM)  # Waddle's own process only: verified by running_pid
+    try:
+        os.kill(pid, signal.SIGTERM)  # Waddle's own process: it holds the instance lock
+    except (ProcessLookupError, PermissionError):
+        print("Waddle is not running.")
+        return 0
     print("Asked Waddle to stop.")
     return 0
 

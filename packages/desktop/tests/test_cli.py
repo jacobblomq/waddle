@@ -33,11 +33,10 @@ def test_stale_or_foreign_pid_file_is_never_signalled(
     killed: list[int] = []
     monkeypatch.setattr(os, "kill", lambda pid, sig: killed.append(pid))
 
-    paths.pid_file.write_text("1")  # pid 1 exists but is not Waddle
-    assert cli.running_pid(paths) is None
-    paths.pid_file.write_text("not a pid")
-    assert cli.running_pid(paths) is None
-    assert cli.main(["stop"]) == 0
+    for content in ("1", str(os.getpid()), "not a pid", ""):  # nobody holds the lock
+        paths.pid_file.write_text(content)
+        assert cli.running_pid(paths) is None
+        assert cli.main(["stop"]) == 0
     assert killed == []
 
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import fcntl
 import os
 import signal
 import socket
@@ -107,6 +108,13 @@ class WaddleApp(QObject):
         self._outputs: dict[str, Rect] = {}
         self._placed = False
         self._last_own: OwnWindow | None = None
+        self._own_uuid: str | None = None
+        self._move_target: tuple[int, int] | None = None
+        self._pending_save: tuple[Rect, str, tuple[int, int]] | None = None
+        self._save_timer = QTimer(self)
+        self._save_timer.setSingleShot(True)
+        self._save_timer.setInterval(400)
+        self._save_timer.timeout.connect(self._flush_position)
 
         env, home = dict(os.environ), Path.home()
         reduced = config.ui.reduced_motion
@@ -188,11 +196,14 @@ class WaddleApp(QObject):
         self._view.teardown()
         if self._ask is not None:
             self._ask.setSource(QUrl())
-        try:
-            self._io.submit(self._kwin.stop()).result(timeout=2.0)
-        except Exception:
-            log.warning("kwin.stop_failed")
-        self._io.stop()
+        if self._io.running:
+            try:
+                self._io.submit(self._kwin.stop()).result(timeout=2.0)
+            except Exception:
+                log.warning("kwin.stop_failed")
+            self._io.stop()
+        self._save_timer.stop()
+        self._flush_position()
         self._positions.close()
         self._tray.hide()
 
@@ -290,15 +301,31 @@ class WaddleApp(QObject):
         if own.title != PENGUIN_WINDOW_TITLE:
             return
         self._last_own = own
+        if own.uuid != self._own_uuid:
+            # A new surface (first start, re-shown after Hide, KWin restarted): KWin chose
+            # where it is, not the user. Put it back rather than remembering that spot.
+            self._own_uuid = own.uuid
+            self._placed = False
         if not self._placed:
             self._place_if_needed()
             return
+        if (own.x, own.y) == self._move_target:
+            self._move_target = None  # the echo of our own move, not a drag
+            return
         output = self._outputs.get(own.output)
-        if output is not None:  # the user dragged him: remember it for this monitor
-            self._positions.save(output, own.output, (own.x, own.y))
+        if output is not None:  # the user moved him: remember it for this monitor
+            # KWin reports every step of a drag; write once, after it settles.
+            self._pending_save = (output, own.output, (own.x, own.y))
+            self._save_timer.start()
+
+    def _flush_position(self) -> None:
+        if self._pending_save is not None:
+            output, name, pos = self._pending_save
+            self._pending_save = None
+            self._positions.save(output, name, pos)
 
     def _place_if_needed(self) -> None:
-        """Once per start: restore the saved spot for this monitor, else bottom-right."""
+        """Once per surface: restore the saved spot for this monitor, else bottom-right."""
         own = self._last_own
         if self._placed or own is None or own.output not in self._outputs:
             return
@@ -311,6 +338,7 @@ class WaddleApp(QObject):
             else default_position(output, size, self._config.placement.margin_px)
         )
         if target != (own.x, own.y):
+            self._move_target = target
             self._io.submit(self._kwin.move_own_window(PENGUIN_WINDOW_TITLE, *target))
 
 
@@ -328,7 +356,31 @@ def _install_signal_handlers(app: QApplication) -> QSocketNotifier:
     return notifier
 
 
+def acquire_instance_lock(paths: WaddlePaths) -> int | None:
+    """Take the single-instance lock and record our pid. None if another Waddle holds it.
+
+    The lock (not the file's existence or contents) is what proves a Waddle is running, so a
+    stale file left by a crash can never make ``waddle stop`` signal an unrelated process.
+    """
+    fd = os.open(paths.pid_file, os.O_RDWR | os.O_CREAT | os.O_CLOEXEC, 0o600)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        os.close(fd)
+        return None
+    os.ftruncate(fd, 0)
+    os.write(fd, str(os.getpid()).encode())
+    return fd
+
+
 def run(config: WaddleConfig, paths: WaddlePaths, *, demo: bool = False) -> int:
+    for directory in paths.all_dirs():
+        directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+    lock = acquire_instance_lock(paths)
+    if lock is None:
+        sys.stdout.write("Waddle is already running.\n")
+        return 0
+
     fmt = QSurfaceFormat.defaultFormat()
     fmt.setAlphaBufferSize(8)
     QSurfaceFormat.setDefaultFormat(fmt)
@@ -340,13 +392,11 @@ def run(config: WaddleConfig, paths: WaddlePaths, *, demo: bool = False) -> int:
     app.setQuitOnLastWindowClosed(False)
     _install_signal_handlers(app)
 
-    for directory in paths.all_dirs():
-        directory.mkdir(parents=True, exist_ok=True, mode=0o700)
-    paths.pid_file.write_text(str(os.getpid()))
     waddle = WaddleApp(config, paths, demo=demo)
     waddle.start()
     try:
         return app.exec()
     finally:
         waddle.shutdown()
-        paths.pid_file.unlink(missing_ok=True)
+        paths.pid_file.unlink(missing_ok=True)  # while still holding the lock
+        os.close(lock)

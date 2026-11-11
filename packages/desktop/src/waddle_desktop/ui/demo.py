@@ -44,6 +44,15 @@ class DemoDriver(QObject):
         self._stream.timeout.connect(self._next_word)
         bridge.guideActionRequested.connect(self._on_action)
         bridge.textSubmitted.connect(self._on_text)
+        bridge.bubbleChanged.connect(self._on_bubble)
+
+    def _cancel(self) -> None:
+        self._words = []
+        self._stream.stop()
+
+    def _on_bubble(self) -> None:
+        if not self._bridge.property("bubbleText"):
+            self._cancel()  # dismissed mid-sentence: do not bring the rest back
 
     def greet(self) -> None:
         self.say(_GREETING)
@@ -74,6 +83,7 @@ class DemoDriver(QObject):
             self._bridge.set_mood(Mood(name))
 
     def toggle_guide(self) -> None:
+        self._cancel()
         if self._bridge.guide_view is None:
             self._bridge.set_bubble("")
             self._bridge.set_guide(mock_guide(), card_open=True)

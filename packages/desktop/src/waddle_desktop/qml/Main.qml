@@ -22,7 +22,11 @@ Item {
             if (item.visible && item.opacity > 0.01)
                 rects.push(item.mapToItem(root, rect.x, rect.y, rect.width, rect.height))
         }
-        add(penguin, penguin.bodyRect)
+        // From the penguin's *target* position, so the mask is right the moment he starts
+        // to move and never trails the slide animation.
+        if (penguin.visible)
+            rects.push(Qt.rect(penguin.targetX + penguin.bodyRect.x, penguin.y + penguin.bodyRect.y,
+                               penguin.bodyRect.width, penguin.bodyRect.height))
         if (bubble.visible)
             add(bubble, Qt.rect(0, 0, bubble.width, bubble.height))
         if (card.visible)
@@ -41,7 +45,6 @@ Item {
         objectName: "penguin"
         width: root.penguinW
         height: root.penguinH
-        // Positioned by its target, not its animated x, so the mask never trails the animation.
         readonly property real targetX: root.width - width - root.pad + root.dodgeShift
         x: targetX
         y: root.height - height - root.pad

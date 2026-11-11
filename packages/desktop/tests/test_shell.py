@@ -109,6 +109,29 @@ def test_dodging_moves_the_input_mask_out_of_the_way(shell: Shell) -> None:
     assert shell.settle()[0] == before
 
 
+def test_mask_leaves_the_old_spot_at_once_even_while_the_slide_animates(
+    qtbot: Any, qt_messages: list[str]
+) -> None:
+    s = Shell(qtbot)
+    s.bridge.set_view(motion_scale=1.0)
+    before = QRect(s.penguin)
+    count = len(s.rects)
+    s.bridge.set_dodged(True)
+    qtbot.waitUntil(lambda: len(s.rects) > count, timeout=2000)
+    first_after = s.rects[count][0]  # the very first mask published after dodging
+    assert first_after.right() < before.left()
+    s.view.teardown()
+
+
+def test_dismissing_the_bubble_stops_the_demo_stream(shell: Shell) -> None:
+    demo = DemoDriver(shell.bridge)
+    demo.greet()
+    shell.qtbot.waitUntil(lambda: len(shell.bridge.property("bubbleText")) > 10, timeout=2000)
+    shell.bridge.dismissBubble()
+    shell.qtbot.wait(200)
+    assert shell.bridge.property("bubbleText") == ""
+
+
 def test_click_and_drag_on_the_body_are_told_apart(shell: Shell) -> None:
     centre = shell.penguin.center()
     with shell.qtbot.waitSignal(shell.bridge.bodyClicked, timeout=1000):

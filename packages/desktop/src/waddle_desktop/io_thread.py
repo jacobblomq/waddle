@@ -33,6 +33,10 @@ class IoThread:
         self._loop.call_soon(self._started.set)
         self._loop.run_forever()
 
+    @property
+    def running(self) -> bool:
+        return self._thread.is_alive()
+
     def start(self) -> None:
         self._thread.start()
         self._started.wait()
@@ -42,6 +46,8 @@ class IoThread:
 
     def stop(self, timeout: float = 2.0) -> None:
         if not self._thread.is_alive():
+            if not self._loop.is_closed():
+                self._loop.close()
             return
         self._loop.call_soon_threadsafe(self._loop.stop)
         self._thread.join(timeout)
