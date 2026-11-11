@@ -236,7 +236,7 @@ class Adapter(Protocol):
 
 There is no method that takes a mutation. The wire protocol to in-app components is request/response with a closed set of read verbs.
 
-**In-app components are installed by you, not by Waddle.** Installing a Blender extension, a Krita or GIMP plug-in, or enabling obs-websocket changes another application's configuration. Onboarding shows the file and the exact command with a Copy button; Waddle only connects once the component is there (D-036 — needs your confirmation).
+**In-app components are installed by you, not by Waddle.** Installing a Blender extension, a Krita or GIMP plug-in, or enabling obs-websocket changes another application's configuration. Onboarding shows the file and the exact command with a Copy button; Waddle only connects once the component is there (D-036).
 
 **Blender extension** (`blender_manifest.toml`, GPL-3.0-or-later, with a legacy `bl_info` shim):
 - A timer on Blender's main thread builds a small immutable snapshot (mode, workspace, editor, engine, selection, active material/nodes, modifiers, frame, playback, shading, history, keymap preset) only when something changed and a client is connected.
@@ -497,7 +497,7 @@ Every stage emits a timing span; `waddle bench` and the eval suite fail when a b
 
 Each is recorded in DECISIONS.md.
 
-**Prime-directive calls — these need your nod**
+**Prime-directive calls** (1 and 2 confirmed by you; 3 awaits your review)
 
 1. **Waddle does not turn accessibility on.** Qt apps expose AT-SPI only when a session-wide flag is set. Flipping it changes a system setting that affects every app, so onboarding explains it and shows you the one command; you run it. (D-012)
 2. **You install the in-app components** (the Blender extension; later Krita/GIMP plug-ins, obs-websocket). Installing them changes another application's configuration. (D-036)

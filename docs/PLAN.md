@@ -19,7 +19,8 @@ Phases follow [VISION.md §13](VISION.md). Design: [ARCHITECTURE.md](ARCHITECTUR
 - [x] Research current versions and APIs → `RESEARCH.md`
 - [x] `VISION.md`, `ARCHITECTURE.md`, `PLAN.md`, `DECISIONS.md`
 - [x] Five-lens design review with adversarial verification; confirmed findings folded in
-- [ ] **Your decisions:** licence (D-001), accessibility enabling (D-012), who installs in-app components (D-036), and the deviations in ARCHITECTURE §12
+- [x] Your decisions: GPL-3.0-or-later (D-001); you enable accessibility (D-012); you install in-app components (D-036)
+- [ ] **Your review** of ARCHITECTURE and PLAN, including the deviations in ARCHITECTURE §12
 - [ ] Repo scaffolding once approved: uv workspace, ruff, mypy, pytest, pre-commit, CI, licence file
 
 ---

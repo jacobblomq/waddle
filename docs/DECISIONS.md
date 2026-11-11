@@ -1,30 +1,30 @@
 # Decisions
 
-One entry per decision: what was chosen, why, and what would change it. Entries marked **⚠ deviates from VISION** differ from the brief; entries marked **❓ needs you** are waiting on your answer. Evidence lives in [RESEARCH.md](RESEARCH.md).
+One entry per decision: what was chosen, why, and what would change it. Entries marked **⚠ deviates from VISION** differ from the brief; the first section holds the questions you have answered. Evidence lives in [RESEARCH.md](RESEARCH.md).
 
 Status key: `proposed` (not yet built) · `accepted` · `superseded by D-xxx`.
 
 ---
 
-## Needs you
+## Answered by you (2026-11-11)
 
-### D-001 Licence ❓
+### D-001 Licence: GPL-3.0-or-later for the whole repository
 - **Options.** (A) Whole repository GPL-3.0-or-later. (B) Permissive core (Apache-2.0) with the Blender extension and the TTS service as separate GPL-3.0-or-later components.
 - **What research found.** The Blender extension must be GPL-compatible either way. The only other GPL pull is the TTS stack (Piper, and espeak-ng through both Piper's and Kokoro's phonemizers). The architecture already runs TTS and the Blender extension as separate processes behind sockets, so **both options are viable** and neither forces a design change.
 - **Recommendation: A.** One licence, no boundary to police, every dependency is compatible, and it matches the ecosystem Waddle lives in (KDE, Blender). Choose B only if you want others to be able to embed the core in non-GPL software.
-- **Status:** waiting for your answer. No licence file is committed yet.
+- **Status:** accepted — you chose option A.
 
-### D-012 Waddle does not enable accessibility itself ❓ ⚠ deviates from VISION
+### D-012 Waddle does not enable accessibility itself ⚠ deviates from VISION
 - **Context.** Qt apps publish their AT-SPI tree only when the session-wide `org.a11y.Status.IsEnabled` flag (or `QT_LINUX_ACCESSIBILITY_ALWAYS_ON`) is set. On Plasma it is very likely off by default.
 - **Decision.** Setting that flag changes a system setting that affects every app, so under the prime directive Waddle will not do it. Onboarding explains what it does and what it costs, and shows the one command with a Copy button; you run it. Until then AT-SPI is reported as unavailable and Waddle uses OCR/vision.
 - **Alternative if you prefer:** you explicitly authorize Waddle to set this one flag at onboarding (and unset it on uninstall). Say so and I will record it as a sanctioned exception alongside the KWin rule.
-- **Status:** proposed; default is "you run it".
+- **Status:** accepted — you run the command.
 
-### D-036 You install in-app components; Waddle only connects ❓ ⚠ deviates from VISION (clarifies)
+### D-036 You install in-app components; Waddle only connects ⚠ deviates from VISION (clarifies)
 - **Context.** Installing the Blender extension writes into Blender's extensions directory and preferences. The same goes for Krita/GIMP plug-ins and for enabling obs-websocket. That is changing another application's configuration.
 - **Decision.** Onboarding shows the file and the exact command (for Blender: `blender --command extension install-file …`) with a Copy button; you run it. Waddle never changes Blender's "Allow Online Access" preference; if the adapter's socket turns out to need it (spike S5.1), the adapter reports "unavailable" and the choice comes back to you.
 - **Alternative if you prefer:** you authorize `install.sh` to install and remove the Blender extension. It would then be added to the sanctioned list in ARCHITECTURE §1 and to the uninstall manifest.
-- **Status:** proposed; default is "you run it".
+- **Status:** accepted — you install them.
 
 ---
 
