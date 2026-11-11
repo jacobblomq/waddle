@@ -1,0 +1,58 @@
+[project]
+name = "waddle-workspace"
+version = "0.1.0"
+description = "Waddle — a read-only, on-screen software tutor for Linux"
+requires-python = ">=3.13"
+license = "GPL-3.0-or-later"
+dependencies = []
+
+[tool.uv]
+package = false
+
+[tool.uv.workspace]
+members = ["packages/core", "packages/desktop"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0",
+    "pytest-qt>=4.5",
+    "ruff>=0.17",
+    "mypy>=2.0",
+    "pre-commit>=4.0",
+    "waddle-core",
+    "waddle-desktop",
+]
+
+[tool.uv.sources]
+waddle-core = { workspace = true }
+waddle-desktop = { workspace = true }
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+src = ["packages/core/src", "packages/desktop/src"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "C4", "PTH", "RUF", "S", "T20"]
+ignore = ["S101"]  # assert is fine in tests and for invariants
+
+[tool.ruff.lint.per-file-ignores]
+"**/tests/**" = ["S", "T20"]
+"tests/**" = ["S", "T20"]
+
+[tool.mypy]
+python_version = "3.13"
+strict = true
+plugins = ["pydantic.mypy"]
+warn_unreachable = true
+mypy_path = ["packages/core/src", "packages/desktop/src"]
+explicit_package_bases = true
+packages = ["waddle_core", "waddle_desktop"]
+
+[tool.pytest.ini_options]
+testpaths = ["packages/core/tests", "packages/desktop/tests", "tests"]
+qt_api = "pyside6"
+addopts = "-q --import-mode=importlib"
+markers = [
+    "kwin: needs a nested kwin_wayland (skipped when unavailable)",
+]
