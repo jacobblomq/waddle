@@ -14,12 +14,6 @@ class _Section(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
-class FullscreenBehavior(StrEnum):
-    BADGE = "badge"
-    HIDE = "hide"
-    STAY = "stay"
-
-
 class UiConfig(_Section):
     size_scale: float = Field(1.0, ge=0.5, le=2.5, description="Penguin size multiplier.")
     reduced_motion: Literal["auto", "on", "off"] = Field(
@@ -30,10 +24,6 @@ class UiConfig(_Section):
 
 
 class PlacementConfig(_Section):
-    follow_active_monitor: bool = Field(False, description="Move to the active window's monitor.")
-    fullscreen: FullscreenBehavior = Field(
-        FullscreenBehavior.BADGE, description="What Waddle does when the focused app is fullscreen."
-    )
     dodge: bool = Field(True, description="Step aside when the pointer rests on the penguin.")
     dodge_dwell_ms: int = Field(350, ge=0, le=5000)
     dodge_return_ms: int = Field(4000, ge=500, le=60000)

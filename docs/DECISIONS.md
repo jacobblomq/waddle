@@ -257,6 +257,21 @@ Status key: `proposed` (not yet built) · `accepted` · `superseded by D-xxx`.
 - Five independent reviews (read-only/privacy, Wayland feasibility, GPU/performance, security, coverage of the brief), each finding then challenged by a second reviewer. 40 findings survived and were folded in; the largest were the model-controlled egress path (D-019, D-041), the area-capture hole (D-033), the unauthenticated direction of the TCP link (D-034), and Focus mode not actually freeing VRAM (D-017).
 - **Status:** accepted.
 
+### D-045 Typing happens in a separate Ask window ⚠ deviates from VISION (clarifies)
+- The penguin window never accepts keyboard focus, so clicking Waddle does not pull focus away from Blender or whatever you are in. The guide card's input field opens a small focus-accepting Ask window instead (the same window the text-input hotkey will open in Phase 2). Esc closes it; that Esc is local to the window.
+- **Unverified.** Whether KWin honors the no-focus window flag for a Wayland toplevel is part of spike S1.4. If it does not, the fallback is a "do not accept focus" key in the window rule.
+- **Status:** accepted for Phase 1; revisit after S1.4.
+
+### D-046 The pid file is a lock, not a claim
+- Waddle holds an exclusive `flock` on its pid file while it runs. `waddle stop` and `waddle status` trust the lock, not the file's contents or a process name, so a stale file can never make `stop` signal an unrelated process, and two instances cannot both start.
+- **Why.** The first version matched "waddle" in the process command line; review showed it could terminate an unrelated process after a crash and pid reuse.
+- **Status:** accepted.
+
+### D-047 Phase 1 review outcome
+- Each of the five modules was reviewed by an independent second agent, and the integrated code by two more lenses (shell correctness; read-only and security). 13 confirmed findings were fixed: position memory being overwritten by KWin's own placement, the stop/pid issue above, the input mask trailing the dodge animation, uninstall deleting the only record of the window rule, legacy-format `kwinrulesrc` rules being unlisted, and a structural guard that missed most ways of starting a process.
+- A third lens (completeness and mutation-testing of the tests) did not run: it hit a usage limit. I did the completeness pass by hand (PLAN "Phase 1 status"); the mutation-testing of my own shell tests was **not** done.
+- **Status:** accepted.
+
 ### D-032 `install.sh` never uses root
 - It prints the exact commands for anything that needs root (for example installing `nvidia-container-toolkit`) instead of running them.
 - **Why.** Consistent with the read-only stance: Waddle's installer changes only your user session and Waddle's own files.

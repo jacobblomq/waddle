@@ -60,8 +60,6 @@ def paint_icon(state: TrayState, accent: str, size: int = 64) -> QPixmap:
 
 class Tray(QObject):
     pauseToggled = Signal(bool)
-    quietToggled = Signal(bool)
-    focusToggled = Signal(bool)
     visibilityToggled = Signal(bool)
     quitRequested = Signal()
     demoRequested = Signal(str)
@@ -74,8 +72,9 @@ class Tray(QObject):
         self._menu = QMenu()
 
         self.pause = self._check("Pause", self.pauseToggled)
-        self.quiet = self._check("Quiet mode", self.quietToggled)
-        self.focus = self._check("Focus mode", self.focusToggled)
+        # Shown disabled until the features they control exist, so nothing pretends to work.
+        self.quiet = self._later("Quiet mode", "Phase 2")
+        self.focus = self._later("Focus mode", "Phase 7")
         self._menu.addSeparator()
         self.show_waddle = self._check("Show Waddle", self.visibilityToggled, checked=True)
         # These arrive in later phases; shown disabled so the menu's shape is already final.

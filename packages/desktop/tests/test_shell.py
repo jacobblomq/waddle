@@ -248,6 +248,7 @@ def test_tray_menu_has_the_full_shape_and_reflects_state(qtbot: Any) -> None:
         assert expected in texts
     assert any(t.startswith("Waddle's eyes") for t in texts)
     assert not tray.eyes.isEnabled() and not tray.settings.isEnabled()
+    assert not tray.quiet.isEnabled() and not tray.focus.isEnabled()  # not built yet
 
     paused: list[bool] = []
     tray.pauseToggled.connect(paused.append)

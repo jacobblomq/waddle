@@ -59,6 +59,34 @@ Phases follow [VISION.md §13](VISION.md). Design: [ARCHITECTURE.md](ARCHITECTUR
 
 **Demo:** a short screen recording cycling through all states, a drag across two monitors, and the measured numbers.
 
+### Phase 1 status
+
+**Built and passing headless; not yet run on a real Plasma session.** Phase 1 is not "done" by its own gate until the checks in the README pass on your machine.
+
+| Item | State |
+|---|---|
+| Penguin, eleven moods, reduced motion, pause when not exposed | built, tested headless (software renderer only) |
+| Bubble, guide card with keycaps, step pill, mock data (`--demo`) | built, tested headless |
+| Tray icon and menu | built; Quiet mode, Focus mode, Waddle's eyes, and Settings are shown disabled until their phases |
+| Window rule installer | built, tested against a stand-in for `kwriteconfig6`; never run against the real tool or KWin |
+| KWin script, one-shot move scripts, D-Bus link | built, tested under Node with a fake KWin and on a private bus; never loaded into KWin |
+| Click-through input mask, dodge | built, tested as logic; the offscreen platform cannot apply masks, so the effect itself is unverified |
+| Per-monitor position memory | built, tested with simulated KWin reports |
+| Theme following (colors, accent, font, animation speed) | built, tested on fixture files |
+| CLI `start` / `stop` / `status` / `rule` / `config`, `install.sh`, `uninstall.sh` | built, tested in a sandbox home |
+| Idle CPU and memory | **indicative only**: 0.25 % and 105 MB PSS on the offscreen software renderer in a container. Real numbers need your machine. |
+
+**Not done in Phase 1**
+
+- Spikes S1.1–S1.5 all need your session and have not been run. S1.3 (layer-shell) was not attempted.
+- The nested-KWin integration tests promised above do not exist: there is no KWin in the build container. They move to the start of Phase 2, where the capture work needs the same harness.
+- The size slider is a config key (`ui.size_scale`, applied at start); there is no settings UI until Phase 9.
+- The default bottom-right position uses a fixed margin and does not know about panels; it may overlap one.
+- The window rule sets no initial position (the script moves Waddle after he appears, so he may be visible elsewhere for a moment), and its "all desktops" value is unconfirmed.
+- If `kdeglobals` has no color groups (possible with an untouched default scheme), Waddle falls back to light colors.
+- Whether clicking the penguin leaves keyboard focus with your app depends on KWin honoring a window flag; unverified.
+- The highlight overlay window itself arrives with "Show me where" in Phase 5; the rule already covers it.
+
 ---
 
 ## Phase 2 — Senses

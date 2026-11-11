@@ -268,6 +268,35 @@ def test_install_then_remove_restores_the_users_file_exactly(
     assert files_under(tmp_path) == ["config/kwinrulesrc"]
 
 
+LEGACY_FILE = """[1]
+Description=Firefox on desktop 2
+wmclass=firefox
+desktops=abc
+desktopsrule=2
+
+[2]
+Description=Konsole small
+wmclass=konsole
+
+[General]
+count=2
+"""
+
+
+def test_legacy_numbered_rules_stay_listed_and_are_restored_exactly(
+    installer: RuleInstaller, rules_file: Path
+) -> None:
+    """A pre-`rules=` kwinrulesrc: writing our own list must not unlist the user's rules."""
+    rules_file.write_text(LEGACY_FILE, encoding="utf-8")
+    installer.install()
+    listed = read(rules_file, "General", "rules").split(",")
+    assert listed[:2] == ["1", "2"] and set(listed[2:]) == {PENGUIN_GROUP, OVERLAY_GROUP}
+    assert read(rules_file, "General", "count") == "4"
+
+    assert installer.remove() is True
+    assert rules_file.read_bytes() == LEGACY_FILE.encode("utf-8")
+
+
 @pytest.mark.parametrize("ending", ["\n", "\n\n\n", ""], ids=["blank", "blanks", "no newline"])
 def test_remove_restores_a_file_with_an_unusual_ending(
     installer: RuleInstaller, rules_file: Path, ending: str

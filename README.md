@@ -27,7 +27,7 @@ Things to try: click the penguin (opens a sample guide), drag him, rest the poin
 
 ## Phase 1 has not run on a real desktop yet
 
-It was built and tested in a container with no KDE session: 388 automated tests pass headless, and the KWin scripts were exercised under Node with a fake KWin. **Whether it behaves on your Plasma session is unverified.** These are the checks only you can do; please tell me what you see.
+It was built and tested in a container with no KDE session: 433 automated tests pass headless, and the KWin scripts were exercised under Node with a fake KWin. **Whether it behaves on your Plasma session is unverified.** These are the checks only you can do; please tell me what you see.
 
 | # | Check | How |
 |---|---|---|

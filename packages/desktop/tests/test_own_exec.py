@@ -31,6 +31,10 @@ def kread(*tail: str, file: str = RC, group: str = "General", key: str = "rules"
 
 REJECTED: dict[str, Any] = {
     "empty argv": [],
+    "nested group via brackets": kwrite("x", group="waddle-x][General", key="rules"),
+    "group with a slash": kwrite("x", group="waddle-x/General"),
+    "group with trailing space": kwrite("x", group="waddle-x "),
+    "group with uppercase": kwrite("x", group="waddle-Penguin"),
     "a bare string": "kwriteconfig6",
     "unknown binary": ["rm", "-rf", "/"],
     "shell": ["sh", "-c", "kwriteconfig6"],

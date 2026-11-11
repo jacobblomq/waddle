@@ -147,6 +147,15 @@ def plan_remove(
     """
     before = general_before or {}
     rules = [name for name in current_general_rules if name not in groups]
+    legacy = _legacy_rule_names(before)
+    if legacy and rules == legacy:
+        # The file used the legacy numbered format before us: put it back exactly.
+        plan = [
+            _delete(rules_file, "General", "rules"),
+            _write(rules_file, "General", "count", before["count"]),
+        ]
+        plan += [_delete(rules_file, group, key) for group, keys in groups.items() for key in keys]
+        return plan
     plan = []
     for key, value in (("rules", ",".join(rules)), ("count", str(len(rules)))):
         absent_before = not rules and not before.get(key)
@@ -157,6 +166,18 @@ def plan_remove(
         )
     plan += [_delete(rules_file, group, key) for group, keys in groups.items() for key in keys]
     return plan
+
+
+def _legacy_rule_names(general: Mapping[str, str]) -> list[str]:
+    """Rule groups of a legacy kwinrulesrc: ``count=N`` with groups ``[1]..[N]`` and no ``rules``.
+
+    KWin 6 still reads this format and migrates it only when it next saves. Writing a
+    ``rules=`` list that omitted these would silently unlist every one of the user's rules.
+    """
+    count = general.get("count", "")
+    if general.get("rules") or not (count.isascii() and count.isdigit()):
+        return []
+    return [str(i) for i in range(1, min(int(count), 10_000) + 1)]
 
 
 def _check(plan: Iterable[Sequence[str]]) -> None:
@@ -214,6 +235,7 @@ class RuleInstaller:
         plan: list[list[str]] = []
         if old is None:
             before = {key: self._read("General", key) for key in ("rules", "count")}
+            listed = listed or _legacy_rule_names(before)
             kept = [name for name in listed if name not in wanted]
             if len(kept) != len(listed):
                 # Our groups are listed although no manifest exists (it was lost). They were
