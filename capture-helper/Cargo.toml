@@ -1,0 +1,42 @@
+[package]
+name = "waddle-capture"
+version = "0.2.0"
+edition = "2021"
+rust-version = "1.87"
+license = "GPL-3.0-or-later"
+description = "Waddle's gated, single-window capture helper for KWin ScreenShot2"
+publish = false
+
+[lib]
+name = "waddle_capture"
+path = "src/lib.rs"
+
+[[bin]]
+name = "waddle-capture"
+path = "src/main.rs"
+
+[dependencies]
+zbus = { version = "6", default-features = false, features = ["default-rt"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+toml = { version = "1", default-features = false, features = ["parse", "serde"] }
+# Blocklist matching must agree with waddle_core.privacy.normalize (NFKC + case folding).
+unicode-normalization = "0.1"
+caseless = "0.2"
+
+[dev-dependencies]
+# The integration tests run fake KWin and logind services.
+zbus = { version = "6", default-features = false, features = ["default-rt", "service"] }
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+strip = true
+panic = "abort"
+
+# Pixel loops are unusably slow unoptimized; keep debug builds (and `cargo test`) quick.
+[profile.dev.package."*"]
+opt-level = 2
+[profile.dev]
+opt-level = 1

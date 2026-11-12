@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Waddle Capture Helper
+Comment=Lets Waddle look at one window at a time; started by Waddle, never by hand
+Exec=@CAPTURE_BIN@
+Icon=help-hint
+Terminal=false
+NoDisplay=true
+StartupNotify=false
+X-KDE-StartupNotify=false
+X-KDE-DBUS-Restricted-Interfaces=org.kde.KWin.ScreenShot2

@@ -1,0 +1,16 @@
+[Application]
+name=org.kde.kdenlive
+runtime=runtime/org.kde.Platform/x86_64/6.9
+
+[Instance]
+instance-id=2874619305
+instance-path=/home/tux/.var/app/org.kde.kdenlive
+app-path=/var/lib/flatpak/app/org.kde.kdenlive/x86_64/stable/5c1f6d0e9a3b47c2a8e1d4f7b6a59382716e0c4d3b2a19f8e7d6c5b4a3928170/files
+app-commit=5c1f6d0e9a3b47c2a8e1d4f7b6a59382716e0c4d3b2a19f8e7d6c5b4a3928170
+arch=x86_64
+branch=stable
+flatpak-version=1.16.1
+session-bus-proxy=true
+
+[Context]
+shared=network;ipc;

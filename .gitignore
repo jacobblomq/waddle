@@ -14,3 +14,4 @@ target/
 *.jpg
 *.wav
 !docs/**/*.png
+capture-helper/target/
