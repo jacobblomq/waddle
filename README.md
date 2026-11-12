@@ -51,7 +51,7 @@ It was built in a container with no KDE session and tested against stand-ins for
 | 7 | "Named in" is under 100 ms | the row in the eyes panel, for a few different apps |
 | 8 | Fullscreen | a fullscreen app makes him small and faint; `Meta+Shift+B` brings him back |
 
-If the eyes panel says `not_authorized`, log out and back in once (KWin reads the helper's desktop entry at login), then try again.
+If the eyes panel says `not_authorized`, that is the helper not being recognised by KWin. Logging out and back in may fix it (I have not been able to test this); either way, tell me.
 
 The Phase 1 checks that are still open (theme change, reduced motion, uninstall leaving `kwinrulesrc` untouched) are listed in [docs/PLAN.md](docs/PLAN.md#phase-1-status).
 
