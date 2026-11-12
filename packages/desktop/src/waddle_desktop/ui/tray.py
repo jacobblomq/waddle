@@ -63,6 +63,8 @@ class Tray(QObject):
     visibilityToggled = Signal(bool)
     quitRequested = Signal()
     demoRequested = Signal(str)
+    quietToggled = Signal(bool)
+    eyesRequested = Signal()
 
     def __init__(self, accent: str, *, demo: bool = False, parent: QObject | None = None):
         super().__init__(parent)
@@ -72,13 +74,14 @@ class Tray(QObject):
         self._menu = QMenu()
 
         self.pause = self._check("Pause", self.pauseToggled)
-        # Shown disabled until the features they control exist, so nothing pretends to work.
-        self.quiet = self._later("Quiet mode", "Phase 2")
+        self.quiet = self._check("Quiet mode", self.quietToggled)
+        # Shown disabled until the feature it controls exists, so nothing pretends to work.
         self.focus = self._later("Focus mode", "Phase 7")
         self._menu.addSeparator()
         self.show_waddle = self._check("Show Waddle", self.visibilityToggled, checked=True)
         # These arrive in later phases; shown disabled so the menu's shape is already final.
-        self.eyes = self._later("Waddle's eyes…", "Phase 2")
+        self.eyes = self._menu.addAction("Waddle's eyes…")
+        self.eyes.triggered.connect(self.eyesRequested)
         self.settings = self._later("Settings…", "Phase 9")
         if demo:
             self._menu.addSeparator()

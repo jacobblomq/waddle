@@ -72,7 +72,7 @@ impl fmt::Debug for WindowInfo {
 pub enum LockState {
     Locked,
     Unlocked,
-    /// logind could not be asked. Treated as not locked, and reported by `hello`.
+    /// logind could not be asked. Nothing is captured (fail closed); reported by `hello`.
     Unknown,
 }
 

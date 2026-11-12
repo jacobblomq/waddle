@@ -1015,7 +1015,7 @@ fn without_kwin_or_logind_the_helper_answers_but_cannot_capture() {
     let (header, _) = rig.capture(WIN, json!({}));
     assert_eq!(
         (&header["status"], &header["code"]),
-        (&json!("error"), &json!("no_capture_path"))
+        (&json!("error"), &json!("lock_unknown"))
     );
 }
 

@@ -7,7 +7,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class _Section(BaseModel):
@@ -35,11 +35,21 @@ class PlacementConfig(_Section):
 
 class PrivacyConfig(_Section):
     block_classes: tuple[str, ...] = Field(
-        (), description="Extra window classes Waddle must never look at (substring match)."
+        (),
+        max_length=512,
+        description="Extra window classes Waddle must never look at (substring match).",
     )
     block_titles: tuple[str, ...] = Field(
-        (), description="Extra window-title fragments Waddle must never look at."
+        (), max_length=512, description="Extra window-title fragments Waddle must never look at."
     )
+
+    @field_validator("block_classes", "block_titles")
+    @classmethod
+    def _short_patterns(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        # The capture helper enforces the same caps and stops capturing when they are exceeded.
+        if any(len(item) > 256 for item in value):
+            raise ValueError("a block pattern may be at most 256 characters")
+        return value
 
 
 class WatchingConfig(_Section):

@@ -143,8 +143,12 @@ impl<D: Desktop> Session<D> {
                 Ok(())
             }
             LockState::Unknown => {
+                // Fail closed: KWin can render a window that sits behind the lock screen.
                 self.lock_check = false;
-                Ok(())
+                Err(Stop::Error(
+                    "lock_unknown",
+                    "the session's lock state cannot be read, so nothing is captured".into(),
+                ))
             }
         }
     }
@@ -790,11 +794,20 @@ mod tests {
     }
 
     #[test]
-    fn unknown_lock_state_does_not_block_and_is_reported_by_hello() {
+    fn unknown_lock_state_captures_nothing_and_is_reported_by_hello() {
         let mut fake = blender();
         fake.lock = Some(LockState::Unknown);
         let mut s = session(fake);
-        assert_eq!(capture(&mut s, json!({})).status(), "ok");
+        let reply = capture(&mut s, json!({}));
+        assert_eq!(reply.status(), "error");
+        assert_eq!(reply.header["code"], json!("lock_unknown"));
+        assert!(
+            !s.desktop_mut()
+                .calls
+                .iter()
+                .any(|c| c.starts_with("capture")),
+            "no pixels are requested while the lock state is unknown"
+        );
         let hello = send(&mut s, json!({"id": 2, "verb": "hello"}));
         assert_eq!(hello.header["lock_check"], json!(false));
         s.desktop_mut().lock = Some(LockState::Unlocked);

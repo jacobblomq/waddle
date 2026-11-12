@@ -210,7 +210,7 @@ Every observed fact is a `Fact{value, source, confidence, observed_at}` where `s
 A pipeline of small pure resolvers over a `ProcessSnapshot`, each unit-testable from fixtures:
 
 1. `window pid → real binary` (walk wrappers: Electron, shell launchers, AppImage runtime, Flatpak `bwrap`).
-2. `packaging` (Flatpak `.flatpak-info`, Snap cgroup/env, AppImage, `dpkg -S`, `/opt` version files). From `/proc/<pid>/environ` only `SNAP_*`, `APPIMAGE`, and `FLATPAK_ID` are extracted; the raw block is never stored, logged, or sent.
+2. `packaging` (Flatpak `.flatpak-info`, Snap cgroup/env, AppImage, `dpkg -S`, `/opt` version files). From `/proc/<pid>/environ` only a fixed allowlist is extracted (`SNAP*`, `APPIMAGE`, `APPDIR`, `FLATPAK_ID`, `container`, and three launcher hints; see D-054); the raw block is never stored, logged, or sent.
 3. `allowlisted --version` in the sandbox (§4.12).
 4. `caption patterns` — a version regex from the knowledge pack over the window title. No pixels, no brain.
 5. `OCR of title bar / About dialog` (brain).

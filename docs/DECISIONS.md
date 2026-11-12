@@ -282,3 +282,36 @@ Status key: `proposed` (not yet built) · `accepted` · `superseded by D-xxx`.
 - It prints the exact commands for anything that needs root (for example installing `nvidia-container-toolkit`) instead of running them.
 - **Why.** Consistent with the read-only stance: Waddle's installer changes only your user session and Waddle's own files.
 - **Status:** proposed.
+
+### D-049 Phase 2 looks only when something is showing you the picture
+- Until the brain exists (Phase 3) nothing consumes a capture, so Waddle takes one **only** while the "Waddle's eyes" panel is open (on focus change, debounced, and on "Look now"). With the panel closed he tracks which app is focused and whether he *may* look, but requests no pixels at all. The glance and ambient levels are implemented and tested in `waddle_core.watching` and start being used in Phase 3.
+- The last frame is held in memory only while the panel is open, and is dropped when it closes, when the gate closes, or when the target changes.
+- **Why.** Capturing with no consumer is looking for no reason.
+- **Status:** accepted for Phase 2.
+
+### D-050 Unknown lock state means no capture, in both the host and the helper
+- The host gate treats "no lock source has answered" as blind, and the capture helper refuses with `lock_unknown` when logind does not answer. The first helper build carried on in that case; review flagged it and it was changed.
+- **Why.** KWin can render a window that sits behind the lock screen (I4). The cost is closed eyes on a machine without logind; `waddle doctor` says so.
+- **Status:** accepted.
+
+### D-051 A second place that starts a process: Waddle's own capture helper
+- `sensors/helper_proc.py` joins `placement/own_exec.py` on the structural allowlist. It can start exactly one program, `$XDG_DATA_HOME/waddle/bin/waddle-capture`, with fixed arguments, after checking it is a regular file owned by you and not writable by others. A symlink there is refused.
+- `install.sh` builds the helper with `cargo` and writes its desktop entry (KWin on Plasma 6.4-6.7 authorizes screenshots by that entry's exact `Exec` path). Without cargo the step is skipped and Waddle runs without sight.
+- **Status:** accepted.
+
+### D-052 Only hotkeys that do something are bound; a key that may be taken is never requested
+- Phase 2 binds `ask`, `pause`, `quiet` and `bring_back`. Push-to-talk, show-me-where, region-select and focus-mode keys join when those features exist; a global key that swallows input and does nothing would be worse than none.
+- Before binding, each key is checked read-only against KGlobalAccel. A taken key, or any key when the check could not run, is offered to the portal with no preferred trigger, so you pick it in the system dialog. `waddle doctor` lists conflicts with free alternatives.
+- **Status:** accepted; depends on spike S2.4.
+
+### D-053 Block-list matching is Unicode-folded and identical in Python and Rust
+- Both gates strip invisible characters, then NFKC + case-fold + NFKC, then substring-match. One shared fixture (58 cases) runs against both. The helper adds two small crates for this (`unicode-normalization`, `caseless`).
+- Whitespace is not collapsed, and the two sides may differ on code points newer than this Python's Unicode tables (the helper then blocks a superset).
+- **Status:** accepted.
+
+### D-054 Phase 2 review outcome and what was deferred
+- Two independent reviewers went over the five modules. Ten defects were fixed, the important ones: a broken `config.toml` silently dropping your block entries (now: no capture until fixed), a window description without class/title reading as "nothing to block", invisible characters evading the block list, a frame returned after blind was requested, `/proc` reads following symlinks or FIFOs planted by the inspected process, a held hotkey never released when the bus died, and read-only queries able to auto-start a service.
+- **Deferred, on purpose:** the portal ScreenCast fallback (stub; S2.6), auto-hide during other apps' screencasts (S2.7), nested-KWin integration tests (no KWin in the build container), enforcing that KWin-script reports really come from KWin (the helper's own re-check is the gate; forging a report can only change which window is *named*), and persisting the tip budget across restarts.
+- **Docs correction:** the environment allowlist for app identity is `SNAP*`, `APPIMAGE`, `APPDIR`, `FLATPAK_ID`, `container` and three launcher hints, slightly wider than ARCHITECTURE §4.6 lists. Values are capped, never logged, never sent.
+- **Status:** accepted.
+

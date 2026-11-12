@@ -92,6 +92,7 @@ title, a class, a path or any other text taken from the session.
 | `bad_reply` | KWin's answer was malformed (metadata missing, impossible geometry or scale, wrong byte count) |
 | `bad_format` | The image is in a `QImage::Format` the helper does not convert |
 | `too_large` | The raw image exceeds 256 MiB, or an encoded image exceeds one frame |
+| `lock_unknown` | logind did not answer, so the lock state is unknown; nothing is captured |
 | `config_unreadable` | The user's `config.toml` exists but cannot be read or parsed, so its block entries are unknown; nothing is captured until it is fixed or removed |
 | `window_id_missing` | KWin's reply did not name the window it captured, so the frame was discarded |
 | `encode_failed` | JPEG/PNG encoding failed |
@@ -117,7 +118,7 @@ title, a class, a path or any other text taken from the session.
 | `kwin` | bool | `org.kde.KWin` has an owner on the session bus |
 | `screenshot2_version` | int or null | the interface's `Version` property; null when absent |
 | `permission_regime` | `"restricted"` \| `"open"` \| `"unknown"` | restricted = Plasma 6.4-6.7 (authorized by executable path); open = 6.8+; derived from KWin's version, `unknown` when it cannot be read |
-| `lock_check` | bool | logind answered the lock query. `false` means the helper **cannot** see the lock state and treats the session as not locked |
+| `lock_check` | bool | logind answered the lock query. `false` means the helper **cannot** see the lock state; every capture then fails with `lock_unknown` |
 | `config_ok` | bool | `false` while the user's `config.toml` exists but cannot be read or parsed (captures then fail with `config_unreadable`; see §6) |
 | `latched` | bool | the blind latch |
 
@@ -223,7 +224,7 @@ any step returns no image, and any pixels already read are dropped.
 1. **Latch.** Latched -> `blind`/`latched`. Nothing else happens.
 2. **Lock.** logind `LockedHint` of the caller's session (`XDG_SESSION_ID`, else
    `/org/freedesktop/login1/session/auto`) true -> `blind`/`locked`. logind unreachable:
-   treated as not locked, `hello.lock_check` is false.
+   `error`/`lock_unknown` and nothing is captured (fail closed); `hello.lock_check` is false.
 3. **Window.** `org.kde.KWin /KWin getWindowInfo(uuid)`; an empty result, or a result whose
    `uuid` is a different window -> `blind`/`not_found`. A non-empty result without a string
    `resourceClass` and a string `caption` cannot be gated -> `error`/`bad_reply`.

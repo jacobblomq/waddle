@@ -43,3 +43,15 @@ def load_qml(qml_engine: QQmlEngine) -> Callable[..., QObject]:
     yield _load  # type: ignore[misc]
     for _component, obj in created:
         obj.deleteLater()
+
+
+def pytest_pyfunc_call(pyfuncitem: pytest.Function) -> bool | None:
+    """Run ``async def`` tests on a fresh event loop (no plugin dependency)."""
+    import asyncio
+    import inspect
+
+    if not inspect.iscoroutinefunction(pyfuncitem.obj):
+        return None
+    names = pyfuncitem._fixtureinfo.argnames
+    asyncio.run(pyfuncitem.obj(**{name: pyfuncitem.funcargs[name] for name in names}))
+    return True

@@ -102,7 +102,8 @@ class Hello:
     screenshot2_version: int | None
     permission_regime: Literal["restricted", "open", "unknown"]
     lock_check: bool
-    """False: the helper cannot see the lock state and treats the session as unlocked."""
+    """False: the helper cannot see the lock state; every capture then fails with the
+    error ``lock_unknown``."""
     config_ok: bool
     """False: the user's config file exists but could not be read. The helper then refuses
     every capture with the error ``config_unreadable`` (blocked windows still report

@@ -27,6 +27,14 @@ class WaddlePaths:
         return self.data_dir / "install-manifest.json"
 
     @property
+    def capture_bin(self) -> Path:
+        return self.data_dir / "bin" / "waddle-capture"
+
+    @property
+    def identity_cache(self) -> Path:
+        return self.cache_dir / "identity.db"
+
+    @property
     def pid_file(self) -> Path:
         return self.runtime_dir / "desktop.pid"
 

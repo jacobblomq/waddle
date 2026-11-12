@@ -681,9 +681,9 @@ def test_real_helper_speaks_the_same_protocol(tmp_path: Path) -> None:
             await client.ping()
             await client.forget()
             result = await client.capture_window(UUID, popups=[POPUP], roi=(1, 2, 3, 4))
-            assert result == CaptureError(
-                code="no_capture_path", message="org.kde.KWin.ScreenShot2 is not available"
-            )
+            # With no logind the lock state is unknown, and the helper fails closed on that
+            # before it even looks for a capture path.
+            assert isinstance(result, CaptureError) and result.code == "lock_unknown"
             await client.set_blind(True)
             assert await client.capture_window(UUID, force=True) == Blind(reason="latched")
             await client.set_blind(False)

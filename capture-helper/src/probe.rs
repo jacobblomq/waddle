@@ -46,6 +46,13 @@ pub fn report<D: Desktop>(desktop: &mut D, uuid: Option<&str>) -> Value {
         );
         return Value::Object(out);
     }
+    if lock == LockState::Unknown {
+        out.insert(
+            "capture".into(),
+            json!({"attempted": false, "reason": "lock state cannot be read (logind unreachable)"}),
+        );
+        return Value::Object(out);
+    }
 
     // The same gate as a real capture: a blocked window is not captured, not even to be
     // measured.

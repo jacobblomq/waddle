@@ -127,6 +127,31 @@ Phases follow [VISION.md §13](VISION.md). Design: [ARCHITECTURE.md](ARCHITECTUR
 
 ---
 
+### Phase 2 status
+
+Built and tested headless (Python suite plus 131 Rust tests against a fake KWin, ScreenShot2 and logind). **Nothing has run against your Plasma session yet**, so every spike below is still open.
+
+Done:
+- Capture helper with the in-helper gate; KWin focus, popup and cursor scripts; privacy gate and block list; watching levels; proactivity gate; app identity steps 1–2; lock/DND tracking; hotkey conflict check and portal binding; eyes-closed and sleeping states; fullscreen badge/hide/stay with bring-back; "Waddle's eyes" v1; `waddle doctor`; installer builds and registers the helper.
+
+Not done (see D-054):
+- Portal ScreenCast fallback (S2.6) — stub only.
+- Auto-hide during another app's screencast (S2.7) — setting exists, no effect yet.
+- Nested-KWin integration tests — no KWin in the build container.
+- Region-select and the cursor stream are built but unused until Phases 6 and 5.
+- "Idle" for tips: Waddle cannot tell when you last typed (he never reads input), so the 1.5 s idle rule is not enforced yet.
+
+On your machine 🖥 (README has the steps):
+1. `waddle doctor` — session, helper, authorization regime, lock state, hotkey conflicts.
+2. S2.1 — open Waddle's eyes; does a picture of the focused window appear, with open menus included, at the right size?
+3. S2.5 — lock the screen: eyes closed/asleep, picture gone; unlock: he can look again.
+4. Block list — focus a private-browsing window or a password manager: eyes closed, no picture.
+5. S2.4 — the shortcut dialog on first start; do Ask, Pause, Quiet and Bring-back fire?
+6. "Named in" under 100 ms for a few apps (deb, Flatpak, Snap, AppImage if you have them).
+7. S2.2 — does the Window row say XWayland for an X11 app and Wayland for a native one?
+
+---
+
 ## Phase 3 — Brain + identity
 
 **Spikes**

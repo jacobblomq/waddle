@@ -45,6 +45,7 @@ class Bridge(QObject):
         self._card_open = False
         self._show_why = False
         self._dodged = False
+        self._badge = False
         self._mouth_open = 0.0
         self._mic_level = 0.0
 
@@ -108,6 +109,12 @@ class Bridge(QObject):
             self._show_why = show
             self.guideChanged.emit()
 
+    def set_badge(self, badge: bool) -> None:
+        """Small and faint, for when the focused app is fullscreen."""
+        if badge != self._badge:
+            self._badge = badge
+            self.viewChanged.emit()
+
     def set_dodged(self, dodged: bool) -> None:
         if dodged != self._dodged:
             self._dodged = dodged
@@ -147,6 +154,7 @@ class Bridge(QObject):
     cardOpen = Property(bool, lambda self: self._card_open, notify=guideChanged)
     showWhy = Property(bool, lambda self: self._show_why, notify=guideChanged)
     dodged = Property(bool, lambda self: self._dodged, notify=dodgedChanged)
+    badge = Property(bool, lambda self: self._badge, notify=viewChanged)
     mouthOpen = Property(float, lambda self: self._mouth_open, notify=voiceChanged)
     micLevel = Property(float, lambda self: self._mic_level, notify=voiceChanged)
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import fcntl
 import os
 import signal
@@ -20,10 +21,17 @@ from waddle_core.config import WaddleConfig
 from waddle_core.identity import APP_ID, PENGUIN_WINDOW_TITLE
 from waddle_core.mood import Mood
 from waddle_core.paths import WaddlePaths
+from waddle_core.privacy import BlindReason, load_blocklist
+from waddle_core.proactivity import Context, Decision, Kind, TipBudget, decide
+from waddle_core.watching import CaptureScheduler, WatchPolicy
+from waddle_core.window import WindowInfo
 from waddle_desktop import log
+from waddle_desktop.identity.cache import AppIdentity, IdentityCache, identify
+from waddle_desktop.identity.packaging import RealFs
+from waddle_desktop.identity.snapshot import ProcReader
 from waddle_desktop.io_thread import HostEvents, IoThread
 from waddle_desktop.kwin.link import KWinLink
-from waddle_desktop.kwin.scripts import core_script_path
+from waddle_desktop.kwin.scripts import core_script_path, cursor_script_path
 from waddle_desktop.kwin.types import OutputInfo, OwnWindow
 from waddle_desktop.placement.positions import (
     PositionStore,
@@ -31,23 +39,24 @@ from waddle_desktop.placement.positions import (
     clamp_to_output,
     default_position,
 )
+from waddle_desktop.resources import data_base, default_blocklist_path
+from waddle_desktop.sensors.capture_client import Frame
+from waddle_desktop.sensors.hotkey_setup import bind, make_plan
+from waddle_desktop.sensors.hotkeys import PortalHotkeys
+from waddle_desktop.sensors.senses import EyesState, Senses, open_helper_eye
+from waddle_desktop.sensors.session import SessionWatcher
 from waddle_desktop.theme.kdeglobals import kdeglobals_paths, load_palette
 from waddle_desktop.theme.palette import ThemePalette
 from waddle_desktop.theme.watcher import ThemeWatcher
 from waddle_desktop.ui.bridge import Bridge
 from waddle_desktop.ui.demo import DemoDriver
 from waddle_desktop.ui.dodge import DodgeMachine
+from waddle_desktop.ui.eyes import EyesModel, FrameProvider
 from waddle_desktop.ui.theme_object import ThemeObject
 from waddle_desktop.ui.tray import Tray, TrayState
 
 _PACKAGE_DIR = Path(waddle_desktop.__file__).parent
 QML_DIR = _PACKAGE_DIR / "qml"
-
-
-def data_base() -> Path:
-    """The directory holding ``kwin/``: packaged data in a wheel, the repo root from source."""
-    packaged = _PACKAGE_DIR / "_data"
-    return packaged if (packaged / "kwin").is_dir() else _PACKAGE_DIR.parents[3]
 
 
 def _now_ms() -> int:
@@ -104,6 +113,13 @@ class WaddleApp(QObject):
         self._config = config
         self._paths = paths
         self._paused = False
+        self._quiet = False
+        self._user_visible = True
+        self._brought_back = False
+        self._base_mood = Mood.IDLE
+        self._eyes_state = EyesState()
+        self._sensors_reported = False  # until then the penguin does not act blind
+        self._tips = TipBudget()
         self._steady = Mood.IDLE
         self._outputs: dict[str, Rect] = {}
         self._placed = False
@@ -139,7 +155,9 @@ class WaddleApp(QObject):
 
         self._tray = Tray(self._theme.palette.accent, demo=demo, parent=self)
         self._tray.pauseToggled.connect(self._set_paused)
-        self._tray.visibilityToggled.connect(self._view.setVisible)
+        self._tray.visibilityToggled.connect(self._set_user_visible)
+        self._tray.quietToggled.connect(self._set_quiet)
+        self._tray.eyesRequested.connect(self.open_eyes)
         self._tray.quitRequested.connect(QApplication.quit)
         self._demo = DemoDriver(self._bridge, self) if demo else None
         if self._demo is not None:
@@ -168,13 +186,58 @@ class WaddleApp(QObject):
         self._events.ownWindow.connect(self._on_own_window)
         self._events.outputs.connect(self._on_outputs)
         self._events.kwinStatus.connect(self._on_kwin_status)
+        self._events.eyes.connect(self._on_eyes)
+        self._events.frame.connect(self._on_frame)
+        self._events.hotkey.connect(self._on_hotkey)
         self._io = IoThread()
+
+        # ---- senses: these objects live on the I/O thread once it starts ----
+        self._frames = FrameProvider()
+        self._eyes_model = EyesModel(self._frames, self)
+        self._eyes_model.lookRequested.connect(self._look_now)
+        self._eyes_view: QQuickView | None = None
+        # No readable block list means no start: Waddle never looks without one.
+        blocklist = load_blocklist(default_blocklist_path()).merged(
+            config.privacy.block_classes, config.privacy.block_titles
+        )
+        self._identity_cache = IdentityCache(paths.identity_cache)
+        reader, fs = ProcReader(), RealFs()
+
+        def identify_window(window: WindowInfo) -> AppIdentity:
+            return identify(
+                window.pid,
+                reader,
+                fs,
+                home,
+                self._identity_cache,
+                window_class=window.resource_class,
+                desktop_file=window.desktop_file,
+            )
+
+        self._senses = Senses(
+            blocklist=blocklist,
+            scheduler=CaptureScheduler(WatchPolicy.from_config(config.watching)),
+            eye_factory=lambda: open_helper_eye(paths.capture_bin),
+            identify=identify_window,
+            on_state=self._events.eyes.emit,
+            on_frame=self._events.frame.emit,
+        )
+        self._session = SessionWatcher(on_change=self._senses.session_changed)
+        self._hotkeys = PortalHotkeys(
+            on_pressed=lambda action: self._events.hotkey.emit(action, True),
+            on_released=lambda action: self._events.hotkey.emit(action, False),
+        )
+        base = data_base()
         self._kwin = KWinLink(
             paths.runtime_dir,
-            core_script_path(data_base()),
+            core_script_path(base),
+            cursor_script=cursor_script_path(base),
             on_own_window=self._events.ownWindow.emit,
             on_outputs=self._events.outputs.emit,
             on_status=self._events.kwinStatus.emit,
+            on_activated=self._senses.window_activated,
+            on_target_changed=self._senses.target_changed,
+            on_popups=self._senses.popups_changed,
         )
 
     # ---- lifecycle -------------------------------------------------------------------
@@ -188,21 +251,43 @@ class WaddleApp(QObject):
         self._watcher.start()
         self._io.start()
         self._io.submit(self._kwin.start())
-        if self._demo is not None:
+        self._io.submit(self._start_sensors())
+        if self._demo is not None and self._may_volunteer("demo-greeting"):
             self._demo.greet()
         log.event("desktop.started", demo=self._demo is not None)
+
+    async def _start_sensors(self) -> None:
+        try:
+            await self._session.start()
+        except Exception as exc:  # no session bus: the gate stays closed (lock unknown)
+            log.warning("session.start_failed", error=type(exc).__name__)
+        try:
+            await bind(await make_plan(self._config.hotkeys), self._hotkeys)
+        except Exception as exc:
+            log.warning("hotkeys.start_failed", error=type(exc).__name__)
+
+    async def _stop_sensors(self) -> None:
+        for stop in (self._hotkeys.stop, self._session.stop, self._senses.stop, self._kwin.stop):
+            try:
+                await asyncio.wait_for(stop(), 1.5)
+            except Exception as exc:
+                log.warning("stop_failed", error=type(exc).__name__)
 
     def shutdown(self) -> None:
         self._watcher.stop()
         self._view.teardown()
-        if self._ask is not None:
-            self._ask.setSource(QUrl())
+        for view in (self._ask, self._eyes_view):
+            if view is not None:
+                view.hide()
+                view.setSource(QUrl())
         if self._io.running:
             try:
-                self._io.submit(self._kwin.stop()).result(timeout=2.0)
+                self._io.submit(self._stop_sensors()).result(timeout=7.0)
             except Exception:
-                log.warning("kwin.stop_failed")
+                log.warning("sensors.stop_failed")
             self._io.stop()
+        self._frames.set_frame(None)
+        self._identity_cache.close()
         self._save_timer.stop()
         self._flush_position()
         self._positions.close()
@@ -226,7 +311,111 @@ class WaddleApp(QObject):
     def _set_paused(self, paused: bool) -> None:
         self._paused = paused
         self._tray.set_state(TrayState.PAUSED if paused else TrayState.WATCHING)
-        self._bridge.set_mood(Mood.SLEEPING if paused else Mood.IDLE)
+        self._io.call(self._senses.set_paused, paused)
+        self._sync_presence()
+
+    def _set_quiet(self, quiet: bool) -> None:
+        self._quiet = quiet
+        log.event("quiet", on=quiet)
+
+    def _set_user_visible(self, visible: bool) -> None:
+        self._user_visible = visible
+        self._sync_presence()
+
+    # ---- senses --------------------------------------------------------------------------
+
+    def _on_eyes(self, state: EyesState) -> None:
+        self._eyes_state = state
+        self._sensors_reported = True
+        self._eyes_model.set_state(state)
+        self._sync_presence()
+
+    def _on_frame(self, frame: Frame | None) -> None:
+        visible = self._eyes_view is not None and self._eyes_view.isVisible()
+        # A frame is kept only while the panel that shows it is open.
+        self._eyes_model.set_frame(frame if visible else None)
+
+    def _sync_presence(self) -> None:
+        """Mood, visibility and badge follow what the senses and the user say."""
+        state = self._eyes_state
+        if self._paused or state.blind is BlindReason.LOCKED:
+            base = Mood.SLEEPING
+        elif state.eyes_closed and self._sensors_reported:
+            base = Mood.EYES_CLOSED
+        else:
+            base = Mood.IDLE
+        if base is not self._base_mood:
+            self._base_mood = base
+            self._bridge.set_mood(base)
+
+        fullscreen = state.window is not None and state.window.fullscreen
+        if not fullscreen:
+            self._brought_back = False
+        mode = self._config.watching.fullscreen if fullscreen and not self._brought_back else ""
+        self._bridge.set_badge(mode == "badge")
+        want_visible = self._user_visible and mode != "hide"
+        if self._view.isVisible() != want_visible:
+            self._view.setVisible(want_visible)
+
+    def _on_hotkey(self, action: str, pressed: bool) -> None:
+        if not pressed:
+            return
+        log.event("hotkey", action=action)
+        if action == "ask":
+            self.open_ask()
+        elif action == "pause":
+            self._tray.pause.toggle()
+        elif action == "quiet":
+            self._tray.quiet.toggle()
+        elif action == "bring_back":
+            self._brought_back = True
+            if self._tray.show_waddle.isChecked():
+                self._sync_presence()
+            else:
+                self._tray.show_waddle.setChecked(True)
+
+    def _may_volunteer(self, category: str) -> bool:
+        """The proactivity gate: every bubble nobody asked for goes through here."""
+        state, now = self._eyes_state, _now_ms()
+        context = Context(
+            dnd=state.session.dnd,
+            quiet=self._quiet,
+            focus_mode=False,
+            user_idle_ms=0,
+            fullscreen=state.window is not None and state.window.fullscreen,
+            locked=state.session.locked,
+            paused=self._paused,
+        )
+        decision = decide(Kind.TIP, category, context, self._tips, now, min_idle_ms=0)
+        log.event("proactive", category=category, decision=decision.value)
+        if decision not in (Decision.SHOW, Decision.SHOW_SILENT):
+            return False
+        self._tips.record_shown(category, now)
+        return True
+
+    # ---- Waddle's eyes -------------------------------------------------------------------
+
+    def open_eyes(self) -> None:
+        if self._eyes_view is None:
+            view = QQuickView()
+            view.setTitle("Waddle's eyes")
+            view.setResizeMode(QQuickView.ResizeMode.SizeRootObjectToView)
+            view.engine().addImageProvider("eyes", self._frames)
+            view.setInitialProperties({"theme": self._theme, "eyes": self._eyes_model})
+            view.setSource(QUrl.fromLocalFile(str(QML_DIR / "Eyes.qml")))
+            view.visibleChanged.connect(self._on_eyes_visible)
+            self._eyes_view = view
+        self._eyes_view.show()
+        self._eyes_view.requestActivate()
+
+    def _on_eyes_visible(self, visible: bool) -> None:
+        self._io.call(self._senses.set_watching, visible)
+        if not visible:
+            self._eyes_model.set_frame(None)
+
+    def _look_now(self) -> None:
+        if self._io.running:
+            self._io.submit(self._senses.look(force=True))
 
     # ---- pointer on the penguin ------------------------------------------------------
 

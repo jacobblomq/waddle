@@ -1,4 +1,4 @@
-"""The ``waddle`` command. Phase 1: start, stop, status, rule, config."""
+"""The ``waddle`` command: start, stop, status, rule, config, doctor."""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ from pathlib import Path
 
 from waddle_core.config import ConfigError, default_config_toml, load_config
 from waddle_core.paths import WaddlePaths, resolve_paths
+from waddle_core.privacy import BlocklistError
 
 
 def _paths() -> WaddlePaths:
@@ -77,7 +78,11 @@ def cmd_start(args: argparse.Namespace) -> int:
     from waddle_desktop.ui.app import run
 
     log.configure(config.logging.level, debug_unredacted=config.logging.debug_unredacted)
-    return run(config, paths, demo=args.demo)
+    try:
+        return run(config, paths, demo=args.demo)
+    except (OSError, BlocklistError):
+        print("Waddle's private-window list could not be read; reinstall Waddle.", file=sys.stderr)
+        return 2
 
 
 def cmd_stop(_: argparse.Namespace) -> int:
@@ -137,6 +142,14 @@ def cmd_config(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_doctor(_: argparse.Namespace) -> int:
+    from waddle_desktop import log
+    from waddle_desktop.cli import doctor
+
+    log.configure("error")
+    return doctor.run(_paths())
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="waddle", description="Waddle, your on-screen tutor.")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -154,6 +167,9 @@ def build_parser() -> argparse.ArgumentParser:
     rule = sub.add_parser("rule", help="manage Waddle's KWin window rule")
     rule.add_argument("action", choices=["install", "remove", "status"])
     rule.set_defaults(func=cmd_rule)
+
+    doctor = sub.add_parser("doctor", help="check what works on this machine (read-only)")
+    doctor.set_defaults(func=cmd_doctor)
 
     config = sub.add_parser("config", help="show the config file location")
     config.add_argument("--print-default", action="store_true", help="print a documented default")

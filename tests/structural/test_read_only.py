@@ -17,6 +17,7 @@ SOURCE_DIRS = [
     REPO / "packages" / "core" / "src",
     REPO / "packages" / "desktop" / "src",
     REPO / "kwin",
+    REPO / "capture-helper" / "src",
 ]
 SUFFIXES = {".py", ".qml", ".js", ".rs", ".sh", ".toml"}
 
@@ -29,7 +30,8 @@ FORBIDDEN = re.compile(
 # The clipboard may only ever be *written*, by an explicit Copy button (not built yet).
 CLIPBOARD = re.compile(r"clipboard", re.IGNORECASE)
 # The only modules allowed to start processes: each is an allowlist in its own right.
-SUBPROCESS_ALLOWED = {"placement/own_exec.py"}
+# own_exec: Waddle's own window rule. helper_proc: Waddle's own capture helper, nothing else.
+SUBPROCESS_ALLOWED = {"placement/own_exec.py", "sensors/helper_proc.py"}
 
 
 def shipped_files() -> list[Path]:

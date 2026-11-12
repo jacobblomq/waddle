@@ -51,7 +51,9 @@ Item {
         readonly property real targetX: root.width - width - root.pad + root.dodgeShift
         x: targetX
         y: root.height - height - root.pad
-        opacity: bridge.dodged ? 0.35 : 1.0
+        opacity: bridge.dodged ? 0.35 : bridge.badge ? 0.55 : 1.0
+        scale: bridge.badge ? 0.6 : 1.0
+        transformOrigin: Item.BottomRight
 
         readonly property string mood: bridge.mood
         readonly property rect bodyRect: figure.item ? figure.item.bodyRect : Qt.rect(0, 0, 0, 0)

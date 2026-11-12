@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Removes what install.sh created: the window rule, the desktop entry, and (with --purge)
+# Removes what install.sh created: the window rule, the desktop entries, the capture helper, and (with --purge)
 # Waddle's own config, data and cache. Never uses root.
 set -euo pipefail
 
@@ -33,6 +33,9 @@ fi
 
 # A fixed path: nothing read from a file decides what gets deleted.
 rm -f -- "$DATA_HOME/applications/$APP_ID.desktop"
+rm -f -- "$DATA_HOME/applications/$APP_ID.Capture.desktop"
+rm -f -- "$DATA_HOME/waddle/bin/waddle-capture"
+rmdir -- "$DATA_HOME/waddle/bin" 2>/dev/null || true
 rm -f -- "$DATA_HOME/waddle/install-manifest.txt"
 
 if [ -n "$rule_problem" ] && [ -f "$RULES_MANIFEST" ]; then

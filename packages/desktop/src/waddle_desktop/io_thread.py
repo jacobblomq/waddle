@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import threading
-from collections.abc import Coroutine
+from collections.abc import Callable, Coroutine
 from concurrent.futures import Future
 from typing import Any
 
@@ -20,6 +20,9 @@ class HostEvents(QObject):
     ownWindow = Signal(object)
     outputs = Signal(object, object)  # list[OutputInfo], active output name | None
     kwinStatus = Signal(bool, str)
+    eyes = Signal(object)  # EyesState
+    frame = Signal(object)  # Frame | None
+    hotkey = Signal(str, bool)  # action id, pressed
 
 
 class IoThread:
@@ -43,6 +46,11 @@ class IoThread:
 
     def submit[T](self, coro: Coroutine[Any, Any, T]) -> Future[T]:
         return asyncio.run_coroutine_threadsafe(coro, self._loop)
+
+    def call(self, fn: Callable[..., object], *args: object) -> None:
+        """Run a plain function on the I/O loop (for objects that live there)."""
+        if self._thread.is_alive():
+            self._loop.call_soon_threadsafe(fn, *args)
 
     def stop(self, timeout: float = 2.0) -> None:
         if not self._thread.is_alive():
