@@ -8,8 +8,9 @@ Item {
 
     // Design-space layout, scaled by bridge.sizeScale for the penguin only.
     readonly property real s: bridge.sizeScale
-    readonly property real penguinW: 160 * s
-    readonly property real penguinH: 190 * s
+    readonly property bool minimal: bridge.style !== "detailed"
+    readonly property real penguinW: (minimal ? 72 : 160) * s
+    readonly property real penguinH: (minimal ? 80 : 190) * s
     readonly property real pad: 12
     readonly property real dodgeShift: bridge.dodged ? -(penguinW + pad) : 0
 
@@ -40,7 +41,9 @@ Item {
     Timer { id: rectTimer; interval: 0; onTriggered: root.publishRects() }
     Component.onCompleted: scheduleRects()
 
-    Penguin {
+    // The penguin, in whichever style is configured. This wrapper owns position and input;
+    // the loaded item only draws.
+    Item {
         id: penguin
         objectName: "penguin"
         width: root.penguinW
@@ -50,14 +53,27 @@ Item {
         y: root.height - height - root.pad
         opacity: bridge.dodged ? 0.35 : 1.0
 
-        mood: bridge.mood
-        accentColor: bridge.theme.accent
-        dark: bridge.theme.isDark
-        motionScale: bridge.motionScale
-        running: bridge.running
-        mouthOpen: bridge.mouthOpen
-        level: bridge.micLevel
-        onTransientFinished: bridge.transientDone()
+        readonly property string mood: bridge.mood
+        readonly property rect bodyRect: figure.item ? figure.item.bodyRect : Qt.rect(0, 0, 0, 0)
+        readonly property bool animating: figure.item ? figure.item.animating : false
+
+        Loader {
+            id: figure
+            anchors.fill: parent
+            source: root.minimal ? "PenguinMini.qml" : "Penguin.qml"
+            onLoaded: root.scheduleRects()
+        }
+        Binding { target: figure.item; property: "mood"; value: bridge.mood; when: figure.item }
+        Binding { target: figure.item; property: "accentColor"; value: bridge.theme.accent; when: figure.item }
+        Binding { target: figure.item; property: "dark"; value: bridge.theme.isDark; when: figure.item }
+        Binding { target: figure.item; property: "motionScale"; value: bridge.motionScale; when: figure.item }
+        Binding { target: figure.item; property: "running"; value: bridge.running; when: figure.item }
+        Binding { target: figure.item; property: "mouthOpen"; value: bridge.mouthOpen; when: figure.item }
+        Binding { target: figure.item; property: "level"; value: bridge.micLevel; when: figure.item }
+        Connections {
+            target: figure.item
+            function onTransientFinished() { bridge.transientDone() }
+        }
 
         Behavior on x {
             enabled: bridge.motionScale > 0

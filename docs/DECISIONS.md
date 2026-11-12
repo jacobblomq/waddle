@@ -272,6 +272,12 @@ Status key: `proposed` (not yet built) · `accepted` · `superseded by D-xxx`.
 - A third lens (completeness and mutation-testing of the tests) did not run: it hit a usage limit. I did the completeness pass by hand (PLAN "Phase 1 status"); the mutation-testing of my own shell tests was **not** done.
 - **Status:** accepted.
 
+### D-048 The default penguin is a small, flat icon ⚠ deviates from VISION (your request, 2026-11-12)
+- After trying Phase 1 you asked for something simpler: "just a little icon, almost unadorned". The default is now a 72×80 flat penguin with dot eyes, a beak, and no scarf, blush, or props. Each mood changes as little as possible: eye shape, a tilt, or one small glyph (`…`, `?`, `!`, `z`).
+- The accent color no longer has a scarf to live on; it shows in the listening ring and the thinking dots.
+- The original larger character is kept as `ui.style = "detailed"`. Both share one interface, so every later phase works with either.
+- **Status:** accepted.
+
 ### D-032 `install.sh` never uses root
 - It prints the exact commands for anything that needs root (for example installing `nvidia-container-toolkit`) instead of running them.
 - **Why.** Consistent with the read-only stance: Waddle's installer changes only your user session and Waddle's own files.

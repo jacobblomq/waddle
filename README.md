@@ -23,11 +23,13 @@ You need Ubuntu 26.04 (or similar) with KDE Plasma 6 on Wayland, and [uv](https:
 
 `install.sh` never uses root. It creates the Python environment, a desktop entry, and one KWin window rule (keep above, no taskbar entry, no border, all desktops) for Waddle's own window. `./uninstall.sh` removes all three; add `--purge` to delete Waddle's config and data too.
 
+The guide you see in demo mode is canned sample content about Blender; Waddle is not looking at your screen yet (that begins in Phase 2).
+
 Things to try: click the penguin (opens a sample guide), drag him, rest the pointer on him (he steps aside), and use the tray icon's **Demo** menu to cycle his moods.
 
 ## Phase 1 has not run on a real desktop yet
 
-It was built and tested in a container with no KDE session: 433 automated tests pass headless, and the KWin scripts were exercised under Node with a fake KWin. **Whether it behaves on your Plasma session is unverified.** These are the checks only you can do; please tell me what you see.
+It was built and tested in a container with no KDE session: all automated tests pass headless, and the KWin scripts were exercised under Node with a fake KWin. **Whether it behaves on your Plasma session is unverified.** These are the checks only you can do; please tell me what you see.
 
 | # | Check | How |
 |---|---|---|

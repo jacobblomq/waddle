@@ -129,6 +129,7 @@ class WaddleApp(QObject):
         self._bridge = Bridge(self._theme, self)
         self._bridge.set_view(
             size_scale=config.ui.size_scale,
+            style=config.ui.style,
             motion_scale=self._theme.palette.animation_factor,
             bubble_max_lines=config.ui.bubble_max_lines,
         )

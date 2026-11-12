@@ -35,6 +35,7 @@ class Bridge(QObject):
         self._theme = theme
         self._mood = Mood.IDLE
         self._size_scale = 1.0
+        self._style = "minimal"
         self._motion_scale = 1.0
         self._running = True
         self._bubble_text = ""
@@ -58,6 +59,7 @@ class Bridge(QObject):
         self,
         *,
         size_scale: float | None = None,
+        style: str | None = None,
         motion_scale: float | None = None,
         running: bool | None = None,
         bubble_max_lines: int | None = None,
@@ -65,6 +67,9 @@ class Bridge(QObject):
         before = (self._size_scale, self._motion_scale, self._running, self._bubble_max_lines)
         if size_scale is not None:
             self._size_scale = size_scale
+        if style is not None and style != self._style:
+            self._style = style
+            self.viewChanged.emit()
         if motion_scale is not None:
             self._motion_scale = motion_scale
         if running is not None:
@@ -132,6 +137,7 @@ class Bridge(QObject):
 
     theme = Property(QObject, lambda self: self._theme, constant=True)
     mood = Property(str, lambda self: self._mood.value, notify=moodChanged)
+    style = Property(str, lambda self: self._style, notify=viewChanged)
     sizeScale = Property(float, lambda self: self._size_scale, notify=viewChanged)
     motionScale = Property(float, lambda self: self._motion_scale, notify=viewChanged)
     running = Property(bool, lambda self: self._running, notify=viewChanged)

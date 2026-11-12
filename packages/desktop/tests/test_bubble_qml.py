@@ -274,7 +274,7 @@ def test_bubble_tail_follows_tail_right(load_qml: Loader, show: Show, theme: The
 def test_card_shows_progress_and_earlier_steps(load_qml: Loader, theme: ThemeObject) -> None:
     card = load_qml("GuideCard.qml", theme=theme, guide=mock_guide().to_qml())
     assert isinstance(card, QQuickItem)
-    assert one(card, "goal").property("text") == "Render a glossy cube with Cycles"
+    assert one(card, "goal").property("text") == "Sample guide: a glossy cube in Blender"
     assert one(card, "progress").property("text") == "Step 2 of 5"
     assert one(card, "stepTitle").property("text") == "Open the Material tab"
     assert len(descendants(card, "doneStep")) == 1

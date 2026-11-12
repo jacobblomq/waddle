@@ -65,7 +65,7 @@ def mock_guide() -> GuideView:
         return Segment(keys=keys)
 
     return GuideView(
-        goal="Render a glossy cube with Cycles",
+        goal="Sample guide: a glossy cube in Blender",
         current=1,
         steps=(
             StepView(

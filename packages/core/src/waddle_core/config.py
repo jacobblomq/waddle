@@ -15,6 +15,9 @@ class _Section(BaseModel):
 
 
 class UiConfig(_Section):
+    style: Literal["minimal", "detailed"] = Field(
+        "minimal", description="'minimal' is a small flat icon; 'detailed' is the larger character."
+    )
     size_scale: float = Field(1.0, ge=0.5, le=2.5, description="Penguin size multiplier.")
     reduced_motion: Literal["auto", "on", "off"] = Field(
         "auto", description="'auto' follows Plasma's animation speed setting."
