@@ -33,6 +33,38 @@ class PlacementConfig(_Section):
     margin_px: int = Field(24, ge=0, le=400, description="Gap to the screen edge.")
 
 
+class PrivacyConfig(_Section):
+    block_classes: tuple[str, ...] = Field(
+        (), description="Extra window classes Waddle must never look at (substring match)."
+    )
+    block_titles: tuple[str, ...] = Field(
+        (), description="Extra window-title fragments Waddle must never look at."
+    )
+
+
+class WatchingConfig(_Section):
+    glance: bool = Field(True, description="One low-res look on app switch when needed.")
+    ambient: bool = Field(False, description="Occasional looks for proactive tips. Opt-in.")
+    guide_max_fps: float = Field(1.0, gt=0, le=1.0, description="Cap while a guide is active.")
+    fullscreen: Literal["badge", "hide", "stay"] = Field(
+        "badge", description="What Waddle does when the focused app is fullscreen."
+    )
+    hide_during_screencast: bool = Field(False, description="Hide while another app records.")
+
+
+class HotkeysConfig(_Section):
+    """Preferred keys; the installer checks each against your existing shortcuts first."""
+
+    ask: str = "Meta+Space"
+    push_to_talk: str = "Meta+`"
+    pause: str = "Meta+Shift+W"
+    show_me_where: str = "Meta+Shift+H"
+    region_select: str = "Meta+Shift+R"
+    quiet: str = "Meta+Shift+Q"
+    focus_mode: str = "Meta+Shift+F"
+    bring_back: str = "Meta+Shift+B"
+
+
 class LoggingConfig(_Section):
     level: Literal["debug", "info", "warning", "error"] = "info"
     debug_unredacted: bool = Field(
@@ -43,6 +75,9 @@ class LoggingConfig(_Section):
 class WaddleConfig(_Section):
     ui: UiConfig = Field(default_factory=UiConfig)
     placement: PlacementConfig = Field(default_factory=PlacementConfig)
+    privacy: PrivacyConfig = Field(default_factory=PrivacyConfig)
+    watching: WatchingConfig = Field(default_factory=WatchingConfig)
+    hotkeys: HotkeysConfig = Field(default_factory=HotkeysConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
 
 
@@ -75,6 +110,8 @@ def default_config_toml() -> str:
             default = sub.default
             if isinstance(default, bool):
                 rendered = "true" if default else "false"
+            elif isinstance(default, tuple):
+                rendered = "[" + ", ".join(f'"{v}"' for v in default) + "]"
             elif isinstance(default, StrEnum | str):
                 rendered = f'"{default!s}"'
             else:

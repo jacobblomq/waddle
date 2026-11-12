@@ -1,0 +1,16 @@
+{
+  "_comment": "Windows Waddle never looks at. Matching is case-insensitive substring, identical in the Python gate and the Rust capture helper (which embeds this file). 'class' matches the window class / app id / desktop file name; 'title' matches the window title.",
+  "class": [
+    "keepassxc", "keepass", "bitwarden", "1password", "enpass", "lastpass", "kwalletmanager",
+    "kwallet", "seahorse", "gnome-keyring", "pass-", "proton-pass", "protonpass", "dashlane",
+    "nordpass", "authenticator", "polkit", "kdesu", "ksshaskpass", "pinentry", "kgpg", "kleopatra"
+  ],
+  "title": [
+    "private browsing", "private window", "incognito", "inprivate", "(private)",
+    "keepass", "bitwarden", "1password", "password manager", "passwords —", "passwords -",
+    "online banking", "internet banking", "e-banking", "ebanking", "netbanking", "bank account",
+    "paypal", "wise.com", "revolut", "credit card", "card number", "cvv",
+    "sign in", "log in", "login", "two-factor", "2fa", "verification code", "recovery phrase",
+    "seed phrase", "private key", "authentication required", "unlock"
+  ]
+}
