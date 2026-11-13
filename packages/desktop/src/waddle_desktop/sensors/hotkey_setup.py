@@ -94,3 +94,16 @@ async def bind(plan: HotkeyPlan, portal: PortalHotkeys) -> BindResult | None:
         checked=plan.conflicts_checked,
     )
     return result
+
+
+def shortcut_labels(plan: HotkeyPlan, result: BindResult | None) -> dict[str, str]:
+    """Action id -> the key that is really bound, as text; "" when the action has no key.
+
+    The portal's own description wins, because you may have picked a different key in its
+    dialog. Nothing is shown for an action that did not get bound.
+    """
+    if result is None or not result.ok:
+        return {}
+    described = dict(result.triggers or {})
+    asked = {item.action: str(item.combo) if item.combo else "" for item in plan.plans}
+    return {action: described.get(action) or asked.get(action, "") for action in result.bound}

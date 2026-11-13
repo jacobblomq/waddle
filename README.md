@@ -34,7 +34,7 @@ The guide in demo mode is canned sample content about Blender. Waddle does not r
 - He always knows **which window is focused** (class, title, size) from his KWin script. Titles are never logged.
 - He takes a **picture only of the focused window**, and in this phase only while **Waddle's eyes** (tray menu) is open. The picture stays in memory and is dropped when you close the panel.
 - **Eyes closed, no picture:** screen locked, lock state unknown, paused, or a window on the private list (password managers, banking, private browsing, plus your own entries under `[privacy]` in `config.toml`).
-- Shortcuts: Ask `Meta+Space`, Pause `Meta+Shift+W`, Quiet `Meta+Shift+Q`, Bring Waddle back `Meta+Shift+B`. A key that is already taken is not grabbed; the system dialog lets you pick another.
+- Shortcuts: Ask `Meta+Space`, Pause `Meta+Shift+W`, Quiet `Meta+Shift+Q`, Bring Waddle back `Meta+Shift+B`. A key that is already taken is not grabbed; the system dialog lets you pick another. The tray menu shows each key next to its action, so you don't have to remember them.
 
 ## Phase 2 has not run on a real desktop yet
 

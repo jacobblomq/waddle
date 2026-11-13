@@ -65,6 +65,7 @@ class Tray(QObject):
     demoRequested = Signal(str)
     quietToggled = Signal(bool)
     eyesRequested = Signal()
+    askRequested = Signal()
 
     def __init__(self, accent: str, *, demo: bool = False, parent: QObject | None = None):
         super().__init__(parent)
@@ -73,6 +74,9 @@ class Tray(QObject):
         self._icon = QSystemTrayIcon(self)
         self._menu = QMenu()
 
+        self.ask = self._menu.addAction("Ask Waddle…")
+        self.ask.triggered.connect(self.askRequested)
+        self._menu.addSeparator()
         self.pause = self._check("Pause", self.pauseToggled)
         self.quiet = self._check("Quiet mode", self.quietToggled)
         # Shown disabled until the feature it controls exists, so nothing pretends to work.
@@ -94,6 +98,7 @@ class Tray(QObject):
         quit_action.triggered.connect(self.quitRequested)
 
         self._icon.setContextMenu(self._menu)
+        self._plain = {a: a.text() for a in (self.pause, self.quiet, self.show_waddle)}
         self._refresh()
 
     def _check(self, text: str, signal: SignalInstance, *, checked: bool = False) -> QAction:
@@ -126,6 +131,19 @@ class Tray(QObject):
         if accent != self._accent:
             self._accent = accent
             self._refresh()
+
+    def set_shortcuts(self, keys: dict[str, str]) -> None:
+        """Show each action's key next to it, so nobody has to remember them."""
+        items = {
+            "ask": self.ask,
+            "pause": self.pause,
+            "quiet": self.quiet,
+            "bring_back": self.show_waddle,
+        }
+        for action_id, action in items.items():
+            base = self._plain.get(action, "Ask Waddle…")
+            key = keys.get(action_id, "")
+            action.setText(f"{base}\t{key}" if key else base)
 
     def show(self) -> None:
         self._icon.show()

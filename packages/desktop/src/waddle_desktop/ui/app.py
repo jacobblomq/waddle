@@ -41,7 +41,7 @@ from waddle_desktop.placement.positions import (
 )
 from waddle_desktop.resources import data_base, default_blocklist_path
 from waddle_desktop.sensors.capture_client import Frame
-from waddle_desktop.sensors.hotkey_setup import bind, make_plan
+from waddle_desktop.sensors.hotkey_setup import bind, make_plan, shortcut_labels
 from waddle_desktop.sensors.hotkeys import PortalHotkeys
 from waddle_desktop.sensors.senses import EyesState, Senses, open_helper_eye
 from waddle_desktop.sensors.session import SessionWatcher
@@ -158,6 +158,7 @@ class WaddleApp(QObject):
         self._tray.visibilityToggled.connect(self._set_user_visible)
         self._tray.quietToggled.connect(self._set_quiet)
         self._tray.eyesRequested.connect(self.open_eyes)
+        self._tray.askRequested.connect(self.open_ask)
         self._tray.quitRequested.connect(QApplication.quit)
         self._demo = DemoDriver(self._bridge, self) if demo else None
         if self._demo is not None:
@@ -189,6 +190,7 @@ class WaddleApp(QObject):
         self._events.eyes.connect(self._on_eyes)
         self._events.frame.connect(self._on_frame)
         self._events.hotkey.connect(self._on_hotkey)
+        self._events.hotkeysBound.connect(self._tray.set_shortcuts)
         self._io = IoThread()
 
         # ---- senses: these objects live on the I/O thread once it starts ----
@@ -262,7 +264,9 @@ class WaddleApp(QObject):
         except Exception as exc:  # no session bus: the gate stays closed (lock unknown)
             log.warning("session.start_failed", error=type(exc).__name__)
         try:
-            await bind(await make_plan(self._config.hotkeys), self._hotkeys)
+            plan = await make_plan(self._config.hotkeys)
+            result = await bind(plan, self._hotkeys)
+            self._events.hotkeysBound.emit(shortcut_labels(plan, result))
         except Exception as exc:
             log.warning("hotkeys.start_failed", error=type(exc).__name__)
 

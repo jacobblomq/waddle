@@ -23,6 +23,7 @@ class HostEvents(QObject):
     eyes = Signal(object)  # EyesState
     frame = Signal(object)  # Frame | None
     hotkey = Signal(str, bool)  # action id, pressed
+    hotkeysBound = Signal(object)  # dict: action id -> key as text ("" if none)
 
 
 class IoThread:

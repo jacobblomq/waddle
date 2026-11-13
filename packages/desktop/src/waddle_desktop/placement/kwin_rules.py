@@ -41,6 +41,12 @@ _APPLY_INITIALLY: Final = "3"
 _FLAGS: Final[Mapping[str, str]] = {
     "above": "true",
     "aboverule": _FORCE,
+    # Keep-above alone sits *below* an active fullscreen window (KWin's ActiveLayer). This
+    # layer is the one KWin documents as "shown even on top of fullscreen"; value and key
+    # names are from KWin 6.6.4's rulesettings.kcfg. Seen on a real session: without it the
+    # penguin vanished behind fullscreen apps.
+    "layer": "critical-notification",
+    "layerrule": _FORCE,
     "skiptaskbar": "true",
     "skiptaskbarrule": _FORCE,
     "skippager": "true",

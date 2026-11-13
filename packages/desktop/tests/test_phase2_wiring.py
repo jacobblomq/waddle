@@ -373,3 +373,44 @@ def test_no_frame_or_capture_file_is_ever_written(app: Any, paths: WaddlePaths) 
         data = path.read_bytes()
         assert b"JPEGDATA" not in data and b"PNGDATA" not in data
         assert b"Secret title" not in data
+
+
+# ---- fixes after the first run on a real desktop ----------------------------------------
+
+
+def test_the_window_rule_puts_waddle_above_fullscreen_windows() -> None:
+    from waddle_desktop.placement.kwin_rules import desired_rules
+
+    for spec in desired_rules(None):
+        entries = spec.entries()
+        assert (entries["layer"], entries["layerrule"]) == ("critical-notification", "2")
+
+
+def test_the_tray_shows_the_key_that_is_really_bound(qtbot: Any) -> None:
+    from waddle_desktop.sensors.hotkey_setup import shortcut_labels
+    from waddle_desktop.sensors.hotkeys import BindResult, BindStatus
+    from waddle_desktop.ui.tray import Tray
+
+    key = parse("Meta+Shift+W")
+    plan = HotkeyPlan(
+        (BindingPlan("pause", key, (), None, key), BindingPlan("ask", None, (), None, key)),
+        {},
+        True,
+    )
+    bound = BindResult(BindStatus.BOUND, ("pause", "ask"), (), {"ask": "Meta+A"})
+    labels = shortcut_labels(plan, bound)
+    assert labels == {"pause": "Meta+Shift+W", "ask": "Meta+A"}, "the portal's answer wins"
+    assert shortcut_labels(plan, None) == {}
+    assert shortcut_labels(plan, BindResult(BindStatus.CANCELLED)) == {}
+
+    tray = Tray("#3daee9")
+    tray.set_shortcuts(labels)
+    assert tray.pause.text() == "Pause\tMeta+Shift+W"
+    assert tray.ask.text() == "Ask Waddle…\tMeta+A"
+    assert tray.quiet.text() == "Quiet mode"
+    tray.set_shortcuts({})
+    assert tray.pause.text() == "Pause"
+    asked: list[bool] = []
+    tray.askRequested.connect(lambda: asked.append(True))
+    tray.ask.trigger()
+    assert asked == [True]

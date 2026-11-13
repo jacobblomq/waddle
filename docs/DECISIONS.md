@@ -315,3 +315,11 @@ Status key: `proposed` (not yet built) · `accepted` · `superseded by D-xxx`.
 - **Docs correction:** the environment allowlist for app identity is `SNAP*`, `APPIMAGE`, `APPDIR`, `FLATPAK_ID`, `container` and three launcher hints, slightly wider than ARCHITECTURE §4.6 lists. Values are capped, never logged, never sent.
 - **Status:** accepted.
 
+### D-055 Waddle's window sits in KWin's "critical notification" layer (found on your machine, 2026-11-13)
+- A keep-above window is stacked *below* an active fullscreen window, so the bring-back shortcut had nothing to bring back. The window rule now also forces `layer=critical-notification`, the layer KWin describes as "shown even on top of fullscreen" (key and value read from KWin 6.6.4's `rulesettings.kcfg`). It is above menus too, which settles the open half of spike S1.2.
+- It is deliberately not the topmost layer: volume and brightness pop-ups still draw over him.
+- The fullscreen setting keeps its meaning: `badge` makes him small and faint over a fullscreen app, `hide` hides him, `stay` leaves him as he is; the shortcut restores him until fullscreen ends.
+- Re-running `./install.sh` updates the existing rule in place.
+- **To confirm on your machine:** he is not drawn over the lock screen.
+- **Status:** accepted.
+
