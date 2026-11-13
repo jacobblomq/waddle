@@ -1,0 +1,14 @@
+# GIMP. The title carries the image id and view ("[Untitled]-1.0 (RGB ...) – GIMP"), which
+# looks like a version and is not one: no caption pattern. "gimp --version" answers before
+# the toolkit starts ("GNU Image Manipulation Program version 3.0.4").
+id = "gimp"
+name = "GIMP"
+about_path = ["Help", "About GIMP"]
+
+[match]
+window_classes = ["gimp", "gimp-2.10", "gimp-3.0", "org.gimp.GIMP"]
+binaries = ["gimp", "gimp-2.10", "gimp-3.0", "gimp-3"]
+
+[version_probe]
+flag = "--version"
+pattern = '^GNU Image Manipulation Program version (?P<version>\d{1,4}\.\d{1,4}(?:\.\d{1,4})?)'

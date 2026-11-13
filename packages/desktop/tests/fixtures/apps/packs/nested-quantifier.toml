@@ -1,0 +1,5 @@
+id = "nested-quantifier"
+name = "Nested"
+
+[caption_version]
+pattern = '^(?:a+)+ (?P<version>\d{1,4}\.\d{1,4})$'

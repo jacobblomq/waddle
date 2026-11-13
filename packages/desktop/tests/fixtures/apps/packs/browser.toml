@@ -1,0 +1,7 @@
+id = "browser"
+name = "Browser"
+browser = true
+
+[match]
+window_classes = ["firefox"]
+binaries = ["firefox"]

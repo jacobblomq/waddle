@@ -1,0 +1,6 @@
+id = "bad-flag"
+name = "Bad Flag"
+
+[version_probe]
+flag = "--help"
+pattern = '(?P<version>\d{1,4}\.\d{1,4})'

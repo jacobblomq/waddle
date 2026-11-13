@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Blender
+Name[de]=Blender (de)
+Exec=blender %f
+Icon=blender
+Categories=Graphics;3DGraphics;

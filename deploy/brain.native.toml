@@ -1,0 +1,29 @@
+# Template for native mode (`waddle brain --native`): the brain runs from the uv workspace
+# instead of a container and talks to an Ollama you already run on this machine.
+#
+# Waddle does not read this file directly. `brainctl` copies it into Waddle's runtime
+# directory with the two @...@ placeholders replaced by your real socket and token paths,
+# and starts `waddle-brain --config <that copy>`.
+#
+# The role tables must stay identical to deploy/brain.toml (a test checks this).
+provider = "ollama"
+ollama_url = "http://127.0.0.1:11434"
+socket_path = '@WADDLE_BRAIN_SOCKET@'
+token_path = '@WADDLE_TOKEN_FILE@'
+
+[roles.fast_vlm]
+model = "qwen3.5:9b"
+num_ctx = 8192
+keep_alive_s = 1800
+vision = true
+
+[roles.smart_model]
+model = "qwen3.8:27b"
+num_ctx = 16384
+keep_alive_s = 300
+vision = true
+
+[roles.embedder]
+model = "qwen3-embedding:0.6b"
+num_ctx = 8192
+keep_alive_s = 1800

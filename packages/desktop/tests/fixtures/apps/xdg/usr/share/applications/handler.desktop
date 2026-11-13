@@ -1,0 +1,5 @@
+[Desktop Entry]
+Type=Application
+Name=URL Handler
+Exec=handler --url %u
+NoDisplay=true

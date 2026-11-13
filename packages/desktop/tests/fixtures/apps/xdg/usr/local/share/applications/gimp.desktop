@@ -1,0 +1,5 @@
+[Desktop Entry]
+Type=Application
+Name=GIMP (local build)
+Exec="/usr/local/bin/gimp-3.0" %U
+Icon=gimp

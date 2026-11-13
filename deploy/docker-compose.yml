@@ -1,0 +1,131 @@
+# Waddle's brain (ARCHITECTURE §5.1, D-019, D-034). Started only through
+# `waddle_desktop.brainctl.compose`, which passes WADDLE_UID, WADDLE_GID, WADDLE_RUNTIME_DIR
+# and WADDLE_TOKEN_FILE. Every rule in this file is checked by
+# packages/desktop/tests/test_compose_file.py.
+#
+# - No service publishes a port. The host reaches waddle-api through a Unix socket in the
+#   runtime directory; nothing listens on TCP on the host.
+# - `models` is an internal network: no route out for waddle-api or ollama.
+# - `egress` is the only network with a route out, and only the one-shot `ollama-pull`
+#   service (profile `pull`) is on it.
+name: waddle
+
+services:
+  waddle-api:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.api
+    image: waddle-api:local
+    user: "${WADDLE_UID:?set by waddle}:${WADDLE_GID:?set by waddle}"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs:
+      - /tmp:size=64m
+    networks: [models]
+    depends_on: [ollama]
+    secrets:
+      - waddle-link-token # mounted read-only at /run/secrets/waddle-link-token
+    volumes:
+      # The runtime directory (0700, yours) holds the Unix socket the host connects to.
+      - type: bind
+        source: "${WADDLE_RUNTIME_DIR:?set by waddle}"
+        target: /run/waddle
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./brain.toml
+        target: /etc/waddle/brain.toml
+        read_only: true
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import socket; socket.socket(socket.AF_UNIX).connect('/run/waddle/brain.sock')"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    restart: unless-stopped
+
+  ollama:
+    # UNVERIFIED (spike S3.1): newest stable tag on Docker Hub on 2026-11-13; not yet run on
+    # the target GPU. Keep the same tag on ollama-pull.
+    image: ollama/ollama:0.40.16
+    # UNVERIFIED (spike S3.1): runs as the image's own user so the model volume needs no
+    # chown step; that the server works with every capability dropped is not yet tested.
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    networks: [models]
+    environment:
+      OLLAMA_HOST: "0.0.0.0:11434" # inside the internal network only; never published
+      OLLAMA_DEBUG: "0" # INFO. Debug and trace levels write prompts to the log.
+      OLLAMA_DEBUG_LOG_REQUESTS: "0" # never write request bodies to disk
+      OLLAMA_NO_CLOUD: "1" # no remote inference, no web search
+      # A server that starts while ollama-pull is downloading must not delete the layers
+      # that no finished model refers to yet. Nothing here removes models, so nothing is lost.
+      OLLAMA_NOPRUNE: "1"
+    volumes:
+      - ollama-models:/root/.ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    healthcheck:
+      test: [CMD, ollama, list]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    restart: unless-stopped
+
+  # One-shot model download: `docker compose --profile pull run --rm -T ollama-pull <model>`.
+  # `ollama pull` needs a server, and the serving container has no route out, so this
+  # container starts its own server on loopback, waits for it, pulls the one model named in
+  # its argument into the shared volume, and exits. No GPU, no access to `models`.
+  ollama-pull:
+    profiles: [pull]
+    image: ollama/ollama:0.40.16
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    networks: [egress]
+    environment:
+      OLLAMA_HOST: "127.0.0.1:11434"
+      OLLAMA_DEBUG: "0"
+      OLLAMA_DEBUG_LOG_REQUESTS: "0"
+      OLLAMA_NO_CLOUD: "1"
+      OLLAMA_NOPRUNE: "1" # this short-lived server must never delete model files
+    volumes:
+      - ollama-models:/root/.ollama
+    # UNVERIFIED (spike S3.3): the inline command has not run against the real image.
+    # "$$" is a literal "$" for the shell; "$$1" is the model name.
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        ollama serve >/dev/null 2>&1 &
+        tries=0
+        until ollama list >/dev/null 2>&1; do
+          tries=$$((tries + 1))
+          [ "$$tries" -lt 30 ] || exit 1
+          sleep 1
+        done
+        ollama pull "$$1"
+      - ollama-pull
+    restart: "no"
+
+networks:
+  models:
+    internal: true
+  egress: {}
+
+volumes:
+  ollama-models: {}
+
+secrets:
+  waddle-link-token:
+    file: "${WADDLE_TOKEN_FILE:?set by waddle}"

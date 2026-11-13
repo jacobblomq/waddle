@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=Application
+Name=Sub
+Exec=$(touch /tmp/waddle-pwned) `id` | sh
+Icon=../../etc/passwd
+Categories=Ok;bad category;$(id);

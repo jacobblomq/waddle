@@ -27,7 +27,8 @@ import json
 import struct
 from typing import Annotated, Final, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError, field_validator
+from pydantic_core import PydanticSerializationError
 
 PROTOCOL_VERSION: Final = 1
 SOCKET_NAME: Final = "brain.sock"
@@ -41,6 +42,7 @@ IMAGE_TTL_SECONDS: Final = 30
 MAX_QUESTION_CHARS: Final = 4000
 MAX_DELTA_CHARS: Final = 4000
 MAX_TITLE_CHARS: Final = 200
+MAX_TIMING_MS: Final = 24 * 60 * 60 * 1000  # no honest timing is longer than a day
 
 Id = Annotated[str, Field(pattern=r"^[A-Za-z0-9_-]{1,64}$")]
 Role = Literal["fast_vlm", "smart_model", "embedder"]
@@ -61,6 +63,14 @@ class _Msg(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     v: Literal[1] = 1
     id: Id
+
+    @field_validator("v", mode="before")
+    @classmethod
+    def _version_is_an_int(cls, value: object) -> object:
+        # Literal[1] compares by equality, so without this ``true`` and ``1.0`` pass as 1.
+        if type(value) is not int:
+            raise ValueError("version must be an integer")
+        return value
 
 
 # ---- shared payloads ---------------------------------------------------------------------
@@ -107,9 +117,9 @@ class ModelStatus(BaseModel):
 
 class Timings(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
-    first_delta_ms: int | None = Field(None, ge=0)
-    total_ms: int = Field(0, ge=0)
-    model_load_ms: int | None = Field(None, ge=0)
+    first_delta_ms: int | None = Field(None, ge=0, le=MAX_TIMING_MS)
+    total_ms: int = Field(0, ge=0, le=MAX_TIMING_MS)
+    model_load_ms: int | None = Field(None, ge=0, le=MAX_TIMING_MS)
 
 
 # ---- host -> brain -----------------------------------------------------------------------
@@ -221,18 +231,26 @@ class LinkError(ValueError):
 
 
 def encode(message: _Msg) -> str:
-    text = message.model_dump_json(exclude_none=True)
+    """The JSON text for one message. Raises ``LinkError`` if it cannot go on the wire."""
+    try:
+        text = message.model_dump_json(exclude_none=True)
+    except PydanticSerializationError:  # e.g. a lone surrogate in tool output
+        raise LinkError("bad_message") from None
     if len(text.encode()) > MAX_CONTROL_BYTES:
         raise LinkError("too_large")
     return text
 
 
 def _decode[T](adapter: TypeAdapter[T], text: str | bytes) -> T:
-    raw = text.encode() if isinstance(text, str) else text
+    try:
+        raw = text.encode() if isinstance(text, str) else text
+    except UnicodeEncodeError:  # a lone surrogate: not valid text on the wire
+        raise LinkError("bad_message") from None
     if len(raw) > MAX_CONTROL_BYTES:
         raise LinkError("too_large")
     try:
-        return adapter.validate_json(raw)
+        # Strict: the other side is untrusted, so "1" is not 1 and "yes" is not true.
+        return adapter.validate_json(raw, strict=True)
     except ValidationError:
         raise LinkError("bad_message") from None
 
@@ -256,15 +274,15 @@ _MAX_HEADER: Final = 512
 
 
 def encode_image(image_id: str, mime: str, data: bytes) -> bytes:
-    if mime not in _MIME:
+    if not isinstance(mime, str) or mime not in _MIME:
         raise LinkError("bad_mime")
     if not data or len(data) > MAX_IMAGE_BYTES:
         raise LinkError("too_large")
-    header = json.dumps({"image_id": image_id, "mime": mime}, separators=(",", ":")).encode()
     try:
-        _ID.validate_python(image_id)
+        _ID.validate_python(image_id, strict=True)
     except ValidationError:
         raise LinkError("bad_id") from None
+    header = json.dumps({"image_id": image_id, "mime": mime}, separators=(",", ":")).encode()
     return struct.pack(">I", len(header)) + header + data
 
 
@@ -278,11 +296,19 @@ def decode_image(message: bytes) -> tuple[str, str, bytes]:
     if size > _MAX_HEADER or len(message) <= 4 + size:
         raise LinkError("bad_image")
     try:
-        header = json.loads(message[4 : 4 + size])
-        image_id = _ID.validate_python(header["image_id"])
-        mime = header["mime"]
-    except (ValueError, KeyError, TypeError, ValidationError):
+        header = json.loads(bytes(message[4 : 4 + size]))
+    except (ValueError, RecursionError):
         raise LinkError("bad_image") from None
-    if mime not in _MIME or set(header) != {"image_id", "mime"}:
+    if not isinstance(header, dict) or set(header) != {"image_id", "mime"}:
         raise LinkError("bad_image")
-    return image_id, mime, message[4 + size :]
+    mime = header["mime"]
+    if not isinstance(mime, str) or mime not in _MIME:
+        raise LinkError("bad_image")
+    try:
+        image_id = _ID.validate_python(header["image_id"], strict=True)
+    except ValidationError:
+        raise LinkError("bad_image") from None
+    data = bytes(message[4 + size :])
+    if len(data) > MAX_IMAGE_BYTES:
+        raise LinkError("too_large")
+    return image_id, mime, data

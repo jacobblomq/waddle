@@ -1,0 +1,5 @@
+id = "webmail"
+name = "Example Mail"
+
+[web_app]
+title_patterns = ['^Inbox \(\d{1,6}\) - Example Mail — Mozilla Firefox$', ' - Example Mail — ']

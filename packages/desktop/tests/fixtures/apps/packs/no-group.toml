@@ -1,0 +1,5 @@
+id = "no-group"
+name = "No Group"
+
+[caption_version]
+pattern = 'Thing \d{1,4}\.\d{1,4}'

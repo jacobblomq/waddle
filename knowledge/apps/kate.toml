@@ -1,0 +1,9 @@
+# Kate. The title is "<file> — Kate": no version.
+# No version_probe: UNVERIFIED (spike S3.5) whether "kate --version" answers without a display.
+id = "kate"
+name = "Kate"
+about_path = ["Help", "About Kate"]
+
+[match]
+window_classes = ["kate", "org.kde.kate"]
+binaries = ["kate"]

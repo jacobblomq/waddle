@@ -1,0 +1,7 @@
+# the user's own copy wins over /usr/share
+[Desktop Entry]
+Type=Application
+Name=Blender (mine)
+Exec=/opt/blender-5.3/blender %f
+Icon=/opt/blender-5.3/blender.svg
+Categories=Graphics;

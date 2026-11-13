@@ -1,0 +1,16 @@
+# Firefox. The title is "<page> — Mozilla Firefox": no version, and the page title is
+# anyone's text. "firefox --version" prints "Mozilla Firefox 144.0.2" and exits before a
+# profile is opened.
+id = "firefox"
+name = "Firefox"
+browser = true
+about_path = ["Menu (three lines, top right)", "Help", "About Firefox"]
+
+[match]
+window_classes = ["firefox", "firefox-esr", "org.mozilla.firefox"]
+desktop_ids = ["firefox_firefox"]
+binaries = ["firefox", "firefox-bin", "firefox-esr"]
+
+[version_probe]
+flag = "--version"
+pattern = '^Mozilla Firefox (?P<version>\d{1,4}\.\d{1,4}(?:\.\d{1,4})?(?:(?:a|b)\d{1,2})?)'

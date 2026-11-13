@@ -1,0 +1,20 @@
+# Blender. Since 4.0 the window title ends in "- Blender <version>"; older releases show no
+# version there. The exact wording of the tail ("5.3", "5.3.1 LTS", "5.4.0 Alpha") is
+# UNVERIFIED (spike S3.6); the pattern accepts all three.
+# "blender --version" prints the version first and exits before any window, preference or
+# add-on is loaded.
+id = "blender"
+name = "Blender"
+about_path = ["Blender menu (the logo, top left)", "About Blender"]
+
+[match]
+window_classes = ["blender", "org.blender.Blender"]
+desktop_ids = ["blender_blender"]
+binaries = ["blender"]
+
+[caption_version]
+pattern = ' - Blender (?P<version>\d{1,4}\.\d{1,4}(?:\.\d{1,4})?(?: (?:Alpha|Beta|Release Candidate|LTS))?)$'
+
+[version_probe]
+flag = "--version"
+pattern = '^Blender (?P<version>\d{1,4}\.\d{1,4}(?:\.\d{1,4})?(?: (?:Alpha|Beta|Release Candidate|LTS))?)'

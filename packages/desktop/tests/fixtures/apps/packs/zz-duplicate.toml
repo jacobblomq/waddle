@@ -1,0 +1,5 @@
+id = "zz-duplicate"
+name = "Duplicate of good"
+
+[match]
+window_classes = ["goodapp"]

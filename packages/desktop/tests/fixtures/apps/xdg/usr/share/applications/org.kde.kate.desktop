@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=Kate
+Exec=kate -b %U
+Icon=kate
+Type=Application
+Categories=Qt;KDE;Utility;TextEditor;
+
+[Desktop Action new-session]
+Name=New Session
+Exec=kate -n --evil

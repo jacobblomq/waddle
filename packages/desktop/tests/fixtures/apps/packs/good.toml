@@ -1,0 +1,15 @@
+id = "good"
+name = "Good App"
+about_path = ["Help", "About Good App"]
+
+[match]
+window_classes = ["GoodApp"]
+desktop_ids = ["org.example.Good"]
+binaries = ["good"]
+
+[caption_version]
+pattern = ' - Good (?P<version>\d{1,4}\.\d{1,4})$'
+
+[version_probe]
+flag = "-V"
+pattern = '^good (?P<version>\d{1,4}(?:\.\d{1,4})?)'

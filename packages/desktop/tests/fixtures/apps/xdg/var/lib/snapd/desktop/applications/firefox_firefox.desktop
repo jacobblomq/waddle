@@ -1,0 +1,5 @@
+[Desktop Entry]
+Type=Application
+Name=Firefox Web Browser
+Exec=env BAMF_DESKTOP_FILE_HINT=/var/lib/snapd/desktop/applications/firefox_firefox.desktop /snap/bin/firefox %u
+Icon=/snap/firefox/5437/default256.png

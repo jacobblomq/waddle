@@ -1,0 +1,10 @@
+# Kdenlive. The title is "<project> / <profile> — Kdenlive": no version.
+# No version_probe: UNVERIFIED (spike S3.5) whether "kdenlive --version" answers without a
+# display (Qt applications usually need one before they parse their arguments).
+id = "kdenlive"
+name = "Kdenlive"
+about_path = ["Help", "About Kdenlive"]
+
+[match]
+window_classes = ["kdenlive", "org.kde.kdenlive"]
+binaries = ["kdenlive"]

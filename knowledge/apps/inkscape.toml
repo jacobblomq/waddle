@@ -1,0 +1,14 @@
+# Inkscape. The title is "<file> - Inkscape": no version. "inkscape --version" prints
+# "Inkscape 1.4 (e7c3feb100, 2024-10-09)" without opening a window.
+id = "inkscape"
+name = "Inkscape"
+about_path = ["Help", "About Inkscape"]
+
+[match]
+window_classes = ["inkscape", "org.inkscape.Inkscape"]
+desktop_ids = ["inkscape_inkscape"]
+binaries = ["inkscape"]
+
+[version_probe]
+flag = "--version"
+pattern = '^Inkscape (?P<version>\d{1,4}\.\d{1,4}(?:\.\d{1,4})?(?:-(?:alpha|beta|rc)\d{0,2})?)'

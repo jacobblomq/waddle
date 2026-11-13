@@ -1,0 +1,21 @@
+# LibreOffice. The title is "<file> — LibreOffice Writer": no version.
+# No version_probe: UNVERIFIED (spike S3.5) whether "soffice.bin --version" leaves the user
+# profile alone.
+id = "libreoffice"
+name = "LibreOffice"
+about_path = ["Help", "About LibreOffice"]
+
+[match]
+window_classes = [
+    "soffice",
+    "libreoffice",
+    "libreoffice-startcenter",
+    "libreoffice-writer",
+    "libreoffice-calc",
+    "libreoffice-impress",
+    "libreoffice-draw",
+    "libreoffice-math",
+    "libreoffice-base",
+    "org.libreoffice.LibreOffice",
+]
+binaries = ["soffice.bin", "soffice", "oosplash"]

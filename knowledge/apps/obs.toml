@@ -1,0 +1,14 @@
+# OBS Studio. The title starts with "OBS <version>" (before the profile and scene names).
+# No version_probe: UNVERIFIED (spike S3.5). "obs --version" is handled early, but OBS also
+# moves old settings folders at start-up, so it stays out until that is checked.
+id = "obs"
+name = "OBS Studio"
+about_path = ["Help", "About"]
+
+[match]
+window_classes = ["obs", "com.obsproject.Studio"]
+desktop_ids = ["obs-studio_obs"]
+binaries = ["obs"]
+
+[caption_version]
+pattern = '^OBS (?:Studio )?(?P<version>\d{1,4}\.\d{1,4}(?:\.\d{1,4})?(?:-(?:beta|rc)\d{1,2})?)(?![\w.])'

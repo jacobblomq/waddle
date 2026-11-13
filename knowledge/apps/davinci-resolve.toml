@@ -1,0 +1,11 @@
+# DaVinci Resolve (an XWayland client).
+# No caption pattern: UNVERIFIED (spike S3.6) what the title shows across versions.
+# No version_probe: Resolve has no flag that prints a version and exits.
+id = "davinci-resolve"
+name = "DaVinci Resolve"
+about_path = ["DaVinci Resolve", "About DaVinci Resolve"]
+
+[match]
+window_classes = ["resolve", "com.blackmagicdesign.resolve"]
+desktop_ids = ["davinci-resolve", "DaVinciResolve"]
+binaries = ["resolve"]

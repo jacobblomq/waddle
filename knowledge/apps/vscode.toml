@@ -1,0 +1,10 @@
+# Visual Studio Code. The title is "<file> - <folder> - Visual Studio Code": no version.
+# No version_probe: the binary is Electron, which does not start under the sandbox's limits.
+id = "vscode"
+name = "Visual Studio Code"
+about_path = ["Help", "About"]
+
+[match]
+window_classes = ["code", "code-url-handler", "code-oss", "com.visualstudio.code"]
+desktop_ids = ["code_code"]
+binaries = ["code", "code-oss"]

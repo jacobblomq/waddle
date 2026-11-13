@@ -1,0 +1,10 @@
+# VSCodium. The title is "<file> - <folder> - VSCodium": no version.
+# No version_probe: the binary is Electron, which does not start under the sandbox's limits.
+id = "vscodium"
+name = "VSCodium"
+about_path = ["Help", "About"]
+
+[match]
+window_classes = ["codium", "vscodium", "codium-url-handler", "com.vscodium.codium"]
+desktop_ids = ["codium_codium"]
+binaries = ["codium"]

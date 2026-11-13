@@ -1,0 +1,4 @@
+[Desktop Entry]
+Type=Application
+Name=Shell
+Exec=sh -c "touch /tmp/waddle-pwned; blender"

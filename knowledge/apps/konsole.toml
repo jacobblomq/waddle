@@ -1,0 +1,9 @@
+# Konsole. The title is "<directory> : <program> — Konsole": no version.
+# No version_probe: UNVERIFIED (spike S3.5) whether "konsole --version" answers without a display.
+id = "konsole"
+name = "Konsole"
+about_path = ["Help", "About Konsole"]
+
+[match]
+window_classes = ["konsole", "org.kde.konsole"]
+binaries = ["konsole"]

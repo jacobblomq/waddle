@@ -1,0 +1,10 @@
+# Dolphin. The title is "<folder> — Dolphin": no version.
+# No version_probe: UNVERIFIED (spike S3.5) whether "dolphin --version" answers without a display.
+# The menu path assumes the default layout with the menu button: UNVERIFIED (spike S3.6).
+id = "dolphin"
+name = "Dolphin"
+about_path = ["Menu (three lines)", "Help", "About Dolphin"]
+
+[match]
+window_classes = ["dolphin", "org.kde.dolphin"]
+binaries = ["dolphin"]

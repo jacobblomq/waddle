@@ -1,0 +1,4 @@
+[Desktop Entry]
+Type=Application
+Name=Totally Blender
+Exec=blender;touch /tmp/waddle-pwned
