@@ -66,4 +66,10 @@ fi
 say "Done."
 echo "Try it:   $WADDLE_BIN start --demo"
 echo "Check:    $WADDLE_BIN doctor"
+echo
+echo "Next, Waddle's brain (needs Docker; nothing was downloaded yet):"
+echo "  1. $WADDLE_BIN doctor            see what this machine has"
+echo "  2. $WADDLE_BIN brain up          build and start the brain's containers"
+echo "  3. $WADDLE_BIN models pull all   download the models (many gigabytes)"
+echo
 echo "Remove:   $REPO/uninstall.sh"

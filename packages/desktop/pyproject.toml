@@ -23,6 +23,8 @@ packages = ["src/waddle_desktop"]
 
 [tool.hatch.build.targets.wheel.force-include]
 "../../kwin/waddle-core.js" = "waddle_desktop/_data/kwin/waddle-core.js"
+# First-party app packs; identity.packs.default_packs_dir() looks for them here.
+"../../knowledge/apps" = "waddle_desktop/_data/knowledge/apps"
 
 [tool.uv.sources]
 waddle-core = { workspace = true }

@@ -1,4 +1,4 @@
-"""The ``waddle`` command: start, stop, status, rule, config, doctor."""
+"""The ``waddle`` command: start, stop, status, rule, config, doctor, brain, models."""
 
 from __future__ import annotations
 
@@ -150,6 +150,43 @@ def cmd_doctor(_: argparse.Namespace) -> int:
     return doctor.run(_paths())
 
 
+def cmd_brain(args: argparse.Namespace) -> int:
+    from waddle_desktop import log
+    from waddle_desktop.cli import brain_cmd
+
+    log.configure("error")
+    paths = _paths()
+    ctl = brain_cmd.make_ctl(paths)
+    if args.action == "up":
+        return brain_cmd.up_native(paths, ctl) if args.native else brain_cmd.up(paths, ctl)
+    if args.action == "down":
+        return brain_cmd.down(ctl)
+    if args.action == "logs":
+        return brain_cmd.logs(ctl, args.tail)
+    return brain_cmd.status(ctl)
+
+
+def cmd_models(args: argparse.Namespace) -> int:
+    from waddle_desktop import log
+    from waddle_desktop.cli import brain_cmd, models_cmd
+
+    log.configure("error")
+    paths = _paths()
+    if args.action == "pull":
+        return models_cmd.pull(brain_cmd.make_ctl(paths), args.role)
+    return models_cmd.status(paths)
+
+
+def _log_tail(text: str) -> int:
+    try:
+        value = int(text)
+    except ValueError:
+        value = 0
+    if not 1 <= value <= 1000:
+        raise argparse.ArgumentTypeError("give a number of lines from 1 to 1000")
+    return value
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="waddle", description="Waddle, your on-screen tutor.")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -170,6 +207,27 @@ def build_parser() -> argparse.ArgumentParser:
 
     doctor = sub.add_parser("doctor", help="check what works on this machine (read-only)")
     doctor.set_defaults(func=cmd_doctor)
+
+    brain = sub.add_parser("brain", help="start, stop and check Waddle's brain")
+    brain_sub = brain.add_subparsers(dest="action", required=True)
+    brain_up = brain_sub.add_parser("up", help="start the brain's containers")
+    brain_up.add_argument(
+        "--native",
+        action="store_true",
+        help="run the brain here in the foreground, without containers (weaker isolation)",
+    )
+    brain_sub.add_parser("down", help="stop the brain's containers (models are kept)")
+    brain_sub.add_parser("status", help="are the brain's containers running")
+    brain_logs = brain_sub.add_parser("logs", help="show what the brain's containers printed")
+    brain_logs.add_argument("--tail", type=_log_tail, default=200, metavar="LINES")
+    brain.set_defaults(func=cmd_brain, native=False)
+
+    models = sub.add_parser("models", help="download and check the models, by role")
+    models_sub = models.add_subparsers(dest="action", required=True)
+    models_pull = models_sub.add_parser("pull", help="download the model for a role")
+    models_pull.add_argument("role", metavar="ROLE", help="fast_vlm, smart_model, embedder or all")
+    models_sub.add_parser("status", help="which models are downloaded and loaded")
+    models.set_defaults(func=cmd_models)
 
     config = sub.add_parser("config", help="show the config file location")
     config.add_argument("--print-default", action="store_true", help="print a documented default")

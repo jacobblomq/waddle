@@ -118,6 +118,15 @@ class EyesState:
         return self.blind in HARD_BLIND
 
 
+@dataclass(frozen=True)
+class Glimpse:
+    """One explicit look, handed to whoever asked for it. ``frame`` is bytes in memory."""
+
+    look: Look
+    frame: Frame | None = None  # set only when ``look.status == "ok"``
+    window_uuid: str = ""  # the window the frame shows
+
+
 class Senses:
     def __init__(
         self,
@@ -148,10 +157,19 @@ class Senses:
         self._look_handle: asyncio.TimerHandle | None = None
         self._tasks: set[asyncio.Task[object]] = set()
         self._stopped = False
+        self._listeners: list[Callable[[EyesState], None]] = []
 
     @property
     def state(self) -> EyesState:
         return self._state
+
+    def add_listener(self, listener: Callable[[EyesState], None]) -> None:
+        """Also tell ``listener`` about every state change (on the loop, after ``on_state``).
+
+        A listener gets the same ``EyesState`` the UI gets. It is for the host services that
+        need to follow the focused window (identity refinement); it grants no way to look.
+        """
+        self._listeners.append(listener)
 
     # ---- inputs (call on the loop) -----------------------------------------------------
 
@@ -236,8 +254,14 @@ class Senses:
         self._emit()
 
     def _emit(self) -> None:
-        if not self._stopped:
-            self._on_state(self._state)
+        if self._stopped:
+            return
+        self._on_state(self._state)
+        for listener in self._listeners:
+            try:
+                listener(self._state)
+            except Exception as exc:  # a listener's bug must not stop the senses
+                log.warning("senses.listener_failed", error=type(exc).__name__)
 
     def _go_blind(self) -> None:
         self._cancel_auto_look()
@@ -315,23 +339,49 @@ class Senses:
     async def look(self, trigger: Trigger = Trigger.USER_ASK, *, force: bool = False) -> Look:
         """Look at the target window once, if the gate and the watching level allow it."""
         async with self._look_lock:
-            look = await self._look(trigger, force)
-            look = replace(look, at=time.time())
-            if look.status in {"ok", "unchanged"} or not self._state.eyes_closed:
-                self._state = replace(self._state, look=look)
-            self._emit()
-            log.event(
-                "look",
-                status=look.status,
-                detail=look.detail,
-                w=look.width,
-                h=look.height,
-                ms=look.elapsed_ms,
-                popups=look.popups,
-            )
-            return look
+            return self._looked(await self._look(trigger, force))
 
-    async def _look(self, trigger: Trigger, force: bool) -> Look:
+    async def look_once(self, trigger: Trigger = Trigger.USER_ASK) -> Glimpse:
+        """One explicit look for a question the user just asked; the frame goes to the caller.
+
+        It passes the same gate, the same helper and the same stale-answer checks as
+        ``look``. The frame is returned instead of being kept: it reaches ``on_frame`` only
+        while something is already showing Waddle's view (the eyes panel), so with the panel
+        closed nothing here holds on to it (D-049). The caller must use it at once, without
+        awaiting in between, or check ``state`` again.
+        """
+        async with self._look_lock:
+            taken: list[tuple[str, Frame]] = []
+            look = self._looked(await self._look(trigger, True, show=self._watching, taken=taken))
+            if look.status != "ok" or not taken:
+                return Glimpse(look)
+            uuid, frame = taken[0]
+            return Glimpse(look, frame, uuid)
+
+    def _looked(self, look: Look) -> Look:
+        look = replace(look, at=time.time())
+        if look.status in {"ok", "unchanged"} or not self._state.eyes_closed:
+            self._state = replace(self._state, look=look)
+        self._emit()
+        log.event(
+            "look",
+            status=look.status,
+            detail=look.detail,
+            w=look.width,
+            h=look.height,
+            ms=look.elapsed_ms,
+            popups=look.popups,
+        )
+        return look
+
+    async def _look(
+        self,
+        trigger: Trigger,
+        force: bool,
+        *,
+        show: bool = True,
+        taken: list[tuple[str, Frame]] | None = None,
+    ) -> Look:
         state = self._state
         window = state.window
         if state.blind is not None or window is None:
@@ -378,8 +428,11 @@ class Senses:
             self._drop_frame()
             return Look("blind", now.blind.value if now.blind else "stale")
         if isinstance(result, Frame):
-            self._frame_uuid = window.uuid
-            self._on_frame(result)
+            if show:
+                self._frame_uuid = window.uuid
+                self._on_frame(result)
+            if taken is not None:
+                taken.append((window.uuid, result))
             return Look(
                 "ok",
                 width=result.width,
