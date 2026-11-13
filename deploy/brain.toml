@@ -1,0 +1,26 @@
+# Which model plays which role. Model names appear here and nowhere in the code (D-018).
+#
+# PROVISIONAL: these tags are candidates from research and have not been pulled or measured
+# on your machine yet (spikes S3.2, S3.3). `waddle models status` shows which are present;
+# the Phase 9 bake-off makes the final choice.
+provider = "ollama"
+ollama_url = "http://ollama:11434"
+socket_path = "/run/waddle/brain.sock"
+token_path = "/run/secrets/waddle-link-token"
+
+[roles.fast_vlm]
+model = "qwen3.5:9b"
+num_ctx = 8192
+keep_alive_s = 1800
+vision = true
+
+[roles.smart_model]
+model = "qwen3.8:27b"
+num_ctx = 16384
+keep_alive_s = 300
+vision = true
+
+[roles.embedder]
+model = "qwen3-embedding:0.6b"
+num_ctx = 8192
+keep_alive_s = 1800

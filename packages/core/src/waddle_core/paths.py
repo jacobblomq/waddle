@@ -35,6 +35,14 @@ class WaddlePaths:
         return self.cache_dir / "identity.db"
 
     @property
+    def brain_socket(self) -> Path:
+        return self.runtime_dir / "brain.sock"
+
+    @property
+    def link_token(self) -> Path:
+        return self.data_dir / "link-token"
+
+    @property
     def pid_file(self) -> Path:
         return self.runtime_dir / "desktop.pid"
 

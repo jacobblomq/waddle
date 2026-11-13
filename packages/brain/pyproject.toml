@@ -1,0 +1,24 @@
+[project]
+name = "waddle-brain"
+version = "0.1.0"
+description = "Waddle's brain: the link server, model providers and question answering"
+requires-python = ">=3.13"
+license = "GPL-3.0-or-later"
+dependencies = [
+    "waddle-core",
+    "websockets>=15.0",
+    "httpx>=0.28",
+]
+
+[project.scripts]
+waddle-brain = "waddle_brain.app:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/waddle_brain"]
+
+[tool.uv.sources]
+waddle-core = { workspace = true }

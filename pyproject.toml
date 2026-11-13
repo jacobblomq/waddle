@@ -4,13 +4,13 @@ version = "0.1.0"
 description = "Waddle — a read-only, on-screen software tutor for Linux"
 requires-python = ">=3.13"
 license = "GPL-3.0-or-later"
-dependencies = ["waddle-core", "waddle-desktop"]
+dependencies = ["waddle-core", "waddle-desktop", "waddle-brain"]
 
 [tool.uv]
 package = false
 
 [tool.uv.workspace]
-members = ["packages/core", "packages/desktop"]
+members = ["packages/core", "packages/desktop", "packages/brain"]
 
 [dependency-groups]
 dev = [
@@ -24,11 +24,12 @@ dev = [
 [tool.uv.sources]
 waddle-core = { workspace = true }
 waddle-desktop = { workspace = true }
+waddle-brain = { workspace = true }
 
 [tool.ruff]
 line-length = 100
 target-version = "py313"
-src = ["packages/core/src", "packages/desktop/src"]
+src = ["packages/core/src", "packages/desktop/src", "packages/brain/src"]
 extend-exclude = ["docs"]
 
 [tool.ruff.lint]
@@ -45,12 +46,12 @@ python_version = "3.13"
 strict = true
 plugins = ["pydantic.mypy"]
 warn_unreachable = true
-mypy_path = ["packages/core/src", "packages/desktop/src"]
+mypy_path = ["packages/core/src", "packages/desktop/src", "packages/brain/src"]
 explicit_package_bases = true
-packages = ["waddle_core", "waddle_desktop"]
+packages = ["waddle_core", "waddle_desktop", "waddle_brain"]
 
 [tool.pytest.ini_options]
-testpaths = ["packages/core/tests", "packages/desktop/tests", "tests"]
+testpaths = ["packages/core/tests", "packages/desktop/tests", "packages/brain/tests", "tests"]
 qt_api = "pyside6"
 addopts = "-q --import-mode=importlib"
 markers = [
