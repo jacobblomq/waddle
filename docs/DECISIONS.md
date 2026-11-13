@@ -323,3 +323,39 @@ Status key: `proposed` (not yet built) · `accepted` · `superseded by D-xxx`.
 - **To confirm on your machine:** he is not drawn over the lock screen.
 - **Status:** accepted.
 
+
+### D-056 The link is a plain WebSocket server on a Unix socket, without FastAPI ⚠ deviates from ARCHITECTURE wording
+- ARCHITECTURE §3 called `waddle-api` a "FastAPI app". Phase 3 uses the `websockets` library directly on both sides. The brain has one endpoint, on a Unix socket, and no HTTP surface at all; a web framework would add an HTTP stack and a TCP-shaped default for nothing.
+- The socket is created `0600` inside Waddle's `0700` runtime directory. The host refuses a socket or directory it does not own; the brain refuses a hello without the 64-hex token. Neither side opens a TCP listener (tested).
+- Decoding is strict on both sides: no type coercion, unknown fields refused, sizes capped before parsing.
+- **Status:** accepted.
+
+### D-057 Phase 3 ships two brain services, not five ⚠ deviates from PLAN
+- The compose file has `waddle-api`, `ollama`, and a one-shot `ollama-pull`. `waddle-ocr`, `waddle-fetch` and `searxng` arrive with the phases that use them (4 and 4/7). Nothing is published; `waddle-api` has no route out; only `ollama-pull` can reach the internet, and only while a pull runs.
+- `waddle-api` runs as your UID. The two Ollama containers run as the upstream image's own user with every capability dropped and `no-new-privileges`, because a named volume cannot be made writable for an arbitrary UID without a root step. This differs from ARCHITECTURE §5.1 ("containers run as your UID") and is to be settled by spike S3.1.
+- `waddle brain down` keeps the model volume. Removing it is left to you (README), so a mistyped command cannot cost a 20 GB download.
+- **Status:** accepted for Phase 3; revisit after S3.1.
+
+### D-058 Asking takes one look; watching still needs the eyes panel open
+- D-049 stands: nothing captures continuously unless "Waddle's eyes" is open. A question is you asking Waddle to look, so each ask takes exactly one picture of the focused window, through the same gate (lock, pause, block list, own window). If the gate says no, the question is sent without a picture and without the window title, and the answer says he could not look and why.
+- The picture is encoded in memory and sent over the Unix socket to the local brain. It is never written to disk and never leaves the machine.
+- **Status:** accepted.
+
+### D-059 What the model is told about the app, and how sure Waddle must be
+- Order of trust for the version: package database or version file, then the app's own `--version` (sandboxed), then the window title, then an answer you gave earlier for this exact binary, then asking you. A title only overrides a weak packaging guess (AppImage file name), never dpkg, Flatpak, Snap or a version file; a disagreement is reported, not silently applied.
+- Confidence: probe 0.9, title 0.7, your answer 0.65. Below 0.6 the version is sent as unknown, so the model says "I can't tell which version" instead of presenting a guess as fact.
+- `--version` is run for four apps only (Blender, GIMP, Inkscape, Firefox). The others either need a display, touch their settings on start, or are untested under the limits (spike S3.5).
+- Reading the version from the screen by OCR is deferred to Phase 4, when the OCR service exists; the hook is in place.
+- The app's name sits outside the fenced data in the prompt. It comes from Waddle's own app pack when there is one, otherwise from the app's menu entry after strict validation (letters, digits, single separators, 48 characters). A maliciously *named* installed app could still put a few plain words there; the prompt tells the model the name is a label. Accepted as a small, local risk.
+- **Status:** accepted.
+
+### D-060 The sandbox for `man`, `tldr` and `--version`
+- bubblewrap with no network, a fresh empty home, the system read-only, every capability dropped, a new session, and `prlimit` inside it (memory, CPU, file size, process count, no core dumps). Only three small scratch places are writable, 8 MiB each. A one-time self-check runs the full profile; if it fails, these three tools are off and Waddle says so. There is no unsandboxed fallback.
+- One thing of yours is visible inside: the offline page cache of a `tldr` client, read-only, because without it `tldr` cannot answer. Nothing else under your home is bound.
+- The model cannot choose a command. It can only name a tool from a closed list of four, with arguments validated on the host (a man page name is a short identifier, not a command line), at most four calls per question.
+- **Status:** accepted.
+
+### D-061 Fence hardening found in review
+- The first fence escaped `>>>` by a non-overlapping replace, so five or more brackets re-formed a fence and screen text could have closed its own data block. Every run of three or more brackets, including full-width look-alikes, is now broken up. Invisible characters, bidi controls and Unicode line separators are removed before fencing.
+- Not defended: single characters that merely resemble a fence (`⋙`, `»`, CJK brackets). The prompt states that a fence is exactly three ASCII brackets and a label Waddle chose.
+- **Status:** accepted.
