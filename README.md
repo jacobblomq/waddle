@@ -77,7 +77,7 @@ None of this has run with Docker, a GPU or a model: the build container has none
 | 6 | Speed | How long until the first words, on the first question (model loading) and on the second. |
 | 7 | Napping | `waddle brain down` while Waddle runs: he naps, asking says the brain is asleep, nothing crashes. `waddle brain up`: he wakes on his own within about half a minute. |
 | 8 | Stop | Ask something long and press **Stop** mid-answer. |
-| 9 | Nothing listens on the network | `ss -ltnp | grep -i -e waddle -e ollama` should print nothing. |
+| 9 | Nothing listens on the network | `ss -ltnp \| grep -i -e waddle -e ollama` should print nothing. |
 
 Likely first failures, so you know they are not your fault: the socket's owner as seen from the host (the app refuses a socket it does not own), Ollama starting with all capabilities dropped, and the model tags.
 
