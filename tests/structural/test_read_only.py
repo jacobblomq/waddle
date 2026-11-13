@@ -16,6 +16,7 @@ REPO = Path(__file__).resolve().parents[2]
 SOURCE_DIRS = [
     REPO / "packages" / "core" / "src",
     REPO / "packages" / "desktop" / "src",
+    REPO / "packages" / "brain" / "src",
     REPO / "kwin",
     REPO / "capture-helper" / "src",
 ]
@@ -31,7 +32,14 @@ FORBIDDEN = re.compile(
 CLIPBOARD = re.compile(r"clipboard", re.IGNORECASE)
 # The only modules allowed to start processes: each is an allowlist in its own right.
 # own_exec: Waddle's own window rule. helper_proc: Waddle's own capture helper, nothing else.
-SUBPROCESS_ALLOWED = {"placement/own_exec.py", "sensors/helper_proc.py"}
+# readonly_exec: the sandboxed observers (man, --version). brainctl/compose: Waddle's own
+# containers through a fixed list of docker compose calls.
+SUBPROCESS_ALLOWED = {
+    "placement/own_exec.py",
+    "sensors/helper_proc.py",
+    "sandbox/readonly_exec.py",
+    "brainctl/compose.py",
+}
 
 
 def shipped_files() -> list[Path]:
