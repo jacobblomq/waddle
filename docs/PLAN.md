@@ -183,6 +183,35 @@ On your machine 🖥 (README has the steps):
 
 ---
 
+### Phase 3 status
+
+Built and tested headless: the Python suite, including end-to-end tests of the real host link client against the real brain server with a stand-in model, and the real sandbox where bubblewrap works. **Nothing has run with Docker, a GPU, Ollama or a real model**, so spikes S3.1–S3.3 are open and none of the "done when" lines marked 🖥 is met yet.
+
+Done:
+- Link protocol over the Unix socket with token, size limits, strict decoding, reconnect with backoff, napping state.
+- Host tool contract (four tools, typed, request-scoped, capped at four calls).
+- Model layer with the Ollama provider, role config, schema-constrained calls with bounded retries.
+- Sandboxed `man`, `tldr` and `--version`.
+- Version waterfall: `--version` for four apps, window-title patterns, remembered answer, "tell Waddle the version" flow; 14 app packs; installed-app inventory.
+- Questions with screen context, streamed into the bubble as plain text with source labels and a Stop button; pre-warm when the Ask window opens.
+- `Capabilities` and the degradation wording for what exists so far.
+- `waddle brain up|down|status|logs`, `waddle models pull|status`, doctor rows for Docker, GPU, brain, models, sandbox, app packs.
+
+Not done (see D-062):
+- `waddle-ocr`, `waddle-fetch`, `searxng` services, and reading the version by OCR: with Phase 4.
+- The installed-app inventory is built but nothing shows it yet.
+- Doctor cannot check the NVIDIA container runtime or the bubblewrap version.
+- First-words timing is measured and sent by the brain but not shown anywhere yet.
+
+New spikes found while building, all 🖥:
+- **S3.4** The link socket across the container boundary: the app accepts only a `0600` socket it owns, in its own `0700` folder. Does the socket made inside `waddle-api` (running as your UID) appear that way on the host? Rootless Docker and Podman may differ.
+- **S3.5** `--version` inside the sandbox for Blender, GIMP, Inkscape, Firefox: does each print and exit under the limits? Does a crash of a probed program leave anything in `/var/crash` or `coredumpctl`?
+- **S3.6** Window titles, classes, Snap/Flatpak ids and About-menu paths in the 14 app packs, on real Plasma.
+
+On your machine 🖥: README, "Phase 3 on your machine".
+
+---
+
 ## Phase 4 — Perception + knowledge
 
 **Spikes**

@@ -359,3 +359,15 @@ Status key: `proposed` (not yet built) · `accepted` · `superseded by D-xxx`.
 - The first fence escaped `>>>` by a non-overlapping replace, so five or more brackets re-formed a fence and screen text could have closed its own data block. Every run of three or more brackets, including full-width look-alikes, is now broken up. Invisible characters, bidi controls and Unicode line separators are removed before fencing.
 - Not defended: single characters that merely resemble a fence (`⋙`, `»`, CJK brackets). The prompt states that a fence is exactly three ASCII brackets and a label Waddle chose.
 - **Status:** accepted.
+
+### D-062 Phase 3 review outcome and what was deferred
+- Every module and each part of the wiring was built by one agent and then reviewed by another that did not write it. Reviews found and fixed, among others: the fence breakout (D-061); a sandbox that kept all capabilities, and could remount `/usr` writable, when Waddle ran as root; sandbox scratch space that was not really capped; compressed replies bypassing the model layer's size caps; pack patterns that could take seconds on a hostile window title; a cancel arriving right behind its question leaving the connection busy for good; a brain in a crash loop being reconnected to twice a second.
+- Small choices made while wiring:
+  - Asking brings a hidden Waddle back, because the answer needs somewhere to appear.
+  - Napping shows instead of thinking when the brain is down.
+  - The "tell Waddle the version" prompt appears at most once per app per session.
+  - A look that fails for a reason other than the gate is reported as "could not look", not as a missing helper.
+  - There is no Copy button on "waddle brain up" yet: clipboard writes stay limited to the Copy button on commands, which arrives with guides.
+  - The fast role runs with the model's reasoning turned off (`think = false` in `deploy/brain.toml`), to stay inside the first-words budget. Untested against a real model (S3.2).
+- Deferred: OCR, fetch and search services (Phase 4); showing the app inventory; a per-role "can see pictures" flag in the link, so Waddle stops guessing which model has vision; doctor rows for the NVIDIA container runtime and bubblewrap version (each needs one more fixed read-only command); removing a leftover download container after an interrupted pull (S3.3); a minimum context size so a very small `num_ctx` cannot push the rules out of the prompt (the shipped sizes are safe); wheel installs (the brain commands need the source checkout, which is what `install.sh` sets up).
+- **Status:** accepted.
