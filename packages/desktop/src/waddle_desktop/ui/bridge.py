@@ -2,13 +2,20 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Final
 
-from PySide6.QtCore import Property, QObject, QRect, QRectF, Signal, Slot
+from PySide6.QtCore import Property, QObject, QRect, QRectF, QTimer, Signal, Slot
 
 from waddle_core.guide import GuideView
 from waddle_core.mood import Mood
 from waddle_desktop.ui.theme_object import ThemeObject
+
+# The brain caps an answer long before this; the bubble still never holds more.
+MAX_BUBBLE_CHARS: Final = 24_000
+# Streamed pieces are gathered for this long and shown in one go, so a fast answer lays the
+# bubble out a few times a second and not once per token.
+STREAM_FLUSH_MS: Final = 60
+_CUT: Final = "…"
 
 
 class Bridge(QObject):
@@ -29,6 +36,8 @@ class Bridge(QObject):
     textSubmitted = Signal(str)
     askRequested = Signal()
     transientFinished = Signal()
+    stopRequested = Signal()  # Stop on a streaming answer, or the bubble closed mid-answer
+    bubbleActionRequested = Signal()  # the one optional button under a bubble
 
     def __init__(self, theme: ThemeObject, parent: QObject | None = None):
         super().__init__(parent)
@@ -41,6 +50,15 @@ class Bridge(QObject):
         self._bubble_text = ""
         self._bubble_expanded = False
         self._bubble_max_lines = 4
+        self._bubble_note = ""
+        self._bubble_action = ""
+        self._streaming = False
+        self._placeholder = False  # the text shown is a stand-in until the first words arrive
+        self._pending: list[str] = []
+        self._flush = QTimer(self)
+        self._flush.setSingleShot(True)
+        self._flush.setInterval(STREAM_FLUSH_MS)
+        self._flush.timeout.connect(self._flush_stream)
         self._guide: GuideView | None = None
         self._card_open = False
         self._show_why = False
@@ -80,12 +98,85 @@ class Bridge(QObject):
         if before != (self._size_scale, self._motion_scale, self._running, self._bubble_max_lines):
             self.viewChanged.emit()
 
-    def set_bubble(self, text: str, *, expanded: bool | None = None) -> None:
+    def _bubble_state(self) -> tuple[str, bool, str, str, bool]:
+        return (
+            self._bubble_text,
+            self._bubble_expanded,
+            self._bubble_note,
+            self._bubble_action,
+            self._streaming,
+        )
+
+    def set_bubble(
+        self, text: str, *, expanded: bool | None = None, note: str = "", action: str = ""
+    ) -> None:
+        """Show one whole message (or none). Ends a streaming answer, if one was showing.
+
+        ``note`` is a small line under the text; ``action`` is the label of one button.
+        """
+        before = self._bubble_state()
         if expanded is None:
             expanded = self._bubble_expanded if text else False
-        if (text, expanded) != (self._bubble_text, self._bubble_expanded):
-            self._bubble_text, self._bubble_expanded = text, expanded
+        self._pending.clear()
+        self._flush.stop()
+        self._streaming = self._placeholder = False
+        self._bubble_text, self._bubble_expanded = text[:MAX_BUBBLE_CHARS], expanded
+        self._bubble_note, self._bubble_action = (note, action) if text else ("", "")
+        if before != self._bubble_state():
             self.bubbleChanged.emit()
+
+    # A streamed answer: begin_stream, any number of push_delta, then end_stream.
+
+    def begin_stream(self, placeholder: str = "") -> None:
+        """A new answer is coming. ``placeholder`` shows until its first words arrive."""
+        self.set_bubble(placeholder, expanded=False)
+        self._streaming, self._placeholder = True, bool(placeholder)
+        self.bubbleChanged.emit()
+
+    def push_delta(self, piece: str) -> None:
+        """The next piece of the answer. Shown with the others on the next flush."""
+        if not self._streaming or not piece:
+            return  # nothing is streaming (stopped, dismissed, finished): a late piece
+        self._pending.append(piece)
+        if not self._flush.isActive():
+            self._flush.start()
+
+    def _flush_stream(self) -> None:
+        if not self._pending:
+            return
+        piece = "".join(self._pending)
+        self._pending.clear()
+        text = piece if self._placeholder else self._bubble_text + piece
+        self._placeholder = False
+        if len(text) > MAX_BUBBLE_CHARS:
+            text = text[: MAX_BUBBLE_CHARS - 1] + _CUT
+        if text != self._bubble_text:
+            self._bubble_text = text
+            self.bubbleChanged.emit()
+
+    def end_stream(self, *, note: str = "", action: str = "", fallback: str = "") -> None:
+        """The answer is over. What arrived stays; ``fallback`` shows if nothing did.
+
+        An answer of blank lines only counts as nothing: it would be an empty-looking bubble.
+        """
+        if not self._streaming:
+            return
+        self._flush.stop()
+        self._flush_stream()
+        text = "" if self._placeholder else self._bubble_text
+        self.set_bubble(text if text.strip() else fallback, note=note, action=action)
+
+    @property
+    def streaming(self) -> bool:
+        return self._streaming
+
+    @property
+    def stream_has_text(self) -> bool:
+        """Words of the answer are showing or about to (not just the placeholder)."""
+        if not self._streaming:
+            return False
+        shown = "" if self._placeholder else self._bubble_text
+        return bool(shown.strip()) or any(piece.strip() for piece in self._pending)
 
     def append_bubble(self, chunk: str) -> None:
         self.set_bubble(self._bubble_text + chunk)
@@ -151,6 +242,9 @@ class Bridge(QObject):
     bubbleMaxLines = Property(int, lambda self: self._bubble_max_lines, notify=viewChanged)
     bubbleText = Property(str, lambda self: self._bubble_text, notify=bubbleChanged)
     bubbleExpanded = Property(bool, lambda self: self._bubble_expanded, notify=bubbleChanged)
+    bubbleNote = Property(str, lambda self: self._bubble_note, notify=bubbleChanged)
+    bubbleAction = Property(str, lambda self: self._bubble_action, notify=bubbleChanged)
+    bubbleBusy = Property(bool, lambda self: self._streaming, notify=bubbleChanged)
     cardOpen = Property(bool, lambda self: self._card_open, notify=guideChanged)
     showWhy = Property(bool, lambda self: self._show_why, notify=guideChanged)
     dodged = Property(bool, lambda self: self._dodged, notify=dodgedChanged)
@@ -213,11 +307,27 @@ class Bridge(QObject):
 
     @Slot()
     def toggleBubble(self) -> None:
-        self.set_bubble(self._bubble_text, expanded=not self._bubble_expanded)
+        if self._bubble_text:
+            # Only this flag: a streaming answer keeps streaming, a note stays.
+            self._bubble_expanded = not self._bubble_expanded
+            self.bubbleChanged.emit()
 
     @Slot()
     def dismissBubble(self) -> None:
+        was_streaming = self._streaming
         self.set_bubble("")
+        if was_streaming:
+            self.stopRequested.emit()  # closing the bubble mid-answer also stops the answer
+
+    @Slot()
+    def stopStream(self) -> None:
+        if self._streaming:
+            self.stopRequested.emit()
+
+    @Slot()
+    def bubbleActionClick(self) -> None:
+        if self._bubble_action:
+            self.bubbleActionRequested.emit()
 
     @Slot()
     def openCard(self) -> None:

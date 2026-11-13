@@ -21,6 +21,7 @@ from waddle_brain.qa.prompt import (
     char_budget,
 )
 from waddle_core.link import AppContext, WindowContext
+from waddle_core.privacy import BlindReason
 
 FIXTURES: list[dict[str, str]] = json.loads(
     (Path(__file__).parent / "injection_fixtures.json").read_text(encoding="utf-8")
@@ -199,6 +200,7 @@ def test_fields_outside_the_block_are_not_rendered() -> None:
         ("no-window", "no app window is focused"),
         ("own-window", "Waddle's own"),
         ("helper-missing", "capture helper"),
+        ("capture-failed", "taking the picture did not work"),
     ],
 )
 def test_blind_reasons_are_stated_in_plain_words(code: str, words: str) -> None:
@@ -463,3 +465,14 @@ def test_hostile_app_fields_never_reach_the_prompt(fixture: dict[str, str], fiel
 
     assert prompt.messages[0].content == SYSTEM_PREFIX
     assert user_text(prompt) == user_text(build_prompt(make_ask(app=blank), budget=BIG))
+
+
+@pytest.mark.parametrize("code", [*(reason.value for reason in BlindReason), "helper-missing"])
+def test_every_reason_the_desktop_sends_has_its_own_line(code: str) -> None:
+    """The desktop sends ``BlindReason`` values or "helper-missing": none may fall through to
+    the generic line, and no two may share one."""
+    codes = [*(reason.value for reason in BlindReason), "helper-missing"]
+    lines = {blind_line(each) for each in codes}
+
+    assert blind_line(code) != blind_line("some-other-code")
+    assert len(lines) == len(codes)

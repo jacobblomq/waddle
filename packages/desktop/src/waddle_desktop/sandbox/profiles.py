@@ -177,6 +177,11 @@ def sandbox_argv(
         f"--cpu={limits.cpu_seconds}",
         f"--fsize={limits.file_size_bytes}",
         f"--nproc={limits.processes}",
+        # A probed program that crashes writes no core file. UNVERIFIED (spike S3.5): where
+        # the system pipes crashes to its own collector (apport, systemd-coredump), the
+        # kernel hands the crash over whatever this limit says; what that collector then
+        # keeps is the system's doing and has not been looked at on the target machine.
+        "--core=0",
         "--",
     ]
     return [*argv, *command]

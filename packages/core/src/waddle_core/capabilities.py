@@ -72,8 +72,14 @@ class Degradation(NamedTuple):
 _DOCTOR: Final = "Run: waddle doctor"
 _BRAIN_UP: Final = "Start it with: waddle brain up"
 _NOT_RUNNING: Final = ("Waddle's brain is not running.", _BRAIN_UP)
+_MISMATCH: Final = (
+    "The brain answered in a way Waddle does not understand.",
+    "Update both, then: waddle brain down, waddle brain up",
+)
 _BRAIN: Final[dict[str, tuple[str, str]]] = {
-    "stopped": _NOT_RUNNING,
+    # "stopped" is the link before Waddle started it and after he stopped it: nothing is
+    # known about the brain then, so nothing is claimed about it.
+    "stopped": ("Waddle is not connected to his brain yet.", "Wait a moment."),
     "no_socket": _NOT_RUNNING,
     "connect_failed": _NOT_RUNNING,
     "lost": ("Waddle lost contact with his brain. He keeps trying.", "waddle brain status"),
@@ -92,6 +98,9 @@ _BRAIN: Final[dict[str, tuple[str, str]]] = {
         "Update both, then: waddle brain down, waddle brain up",
     ),
     "busy": ("Another Waddle is already connected to the brain.", "Close the other one."),
+    "bad_handshake": _MISMATCH,
+    "bad_hello": _MISMATCH,
+    "protocol": _MISMATCH,
 }
 _BRAIN_OTHER: Final = ("Waddle cannot talk to his brain right now. He keeps trying.", _DOCTOR)
 
@@ -113,13 +122,15 @@ _CAPTURE: Final[dict[str, tuple[str, str]]] = {
 }
 _CAPTURE_OTHER: Final = ("Waddle cannot take a look at windows right now.", _DOCTOR)
 
-_SANDBOX: Final[dict[str, str]] = {
-    SANDBOX_NO_BWRAP: "bwrap is not installed.",
-    SANDBOX_NO_PRLIMIT: "prlimit is not installed.",
-    SANDBOX_SETUP_FAILED: "The sandbox could not be set up.",
-    SANDBOX_UNCHECKED: "The sandbox has not been checked yet.",
+_SANDBOX: Final[dict[str, tuple[str, str]]] = {
+    SANDBOX_NO_BWRAP: ("bwrap is not installed.", "Install bubblewrap, then run: waddle doctor"),
+    SANDBOX_NO_PRLIMIT: (
+        "prlimit is not installed.",
+        "Install util-linux, then run: waddle doctor",
+    ),
+    SANDBOX_SETUP_FAILED: ("The sandbox could not be set up.", _DOCTOR),
+    SANDBOX_UNCHECKED: ("The sandbox has not been checked yet.", _DOCTOR),
 }
-_SANDBOX_FIX: Final = "Install bubblewrap and util-linux, then run: waddle doctor"
 
 
 def degradations(cap: Capabilities) -> list[Degradation]:
@@ -146,8 +157,8 @@ def degradations(cap: Capabilities) -> list[Degradation]:
             )
         )
     if not cap.sandbox:
-        why = _SANDBOX.get(cap.sandbox_reason, _SANDBOX[SANDBOX_SETUP_FAILED])
-        out.append(Degradation("Version checks, man pages and tldr", why, _SANDBOX_FIX))
+        why, fix = _SANDBOX.get(cap.sandbox_reason, _SANDBOX[SANDBOX_SETUP_FAILED])
+        out.append(Degradation("Version checks, man pages and tldr", why, fix))
     else:
         if not cap.man:
             out.append(Degradation("Man pages", "man is not installed.", "Install man-db."))

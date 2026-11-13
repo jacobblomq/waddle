@@ -13,6 +13,11 @@ model = "qwen3.5:9b"
 num_ctx = 8192
 keep_alive_s = 1800
 vision = true
+# Do not let this model reason before it replies: the fast role has to stay inside the
+# 1.5 s first-words budget, and thinking comes before the first word. UNVERIFIED (spike
+# S3.2): not yet tried against this tag on a real Ollama; remove the line to get the
+# model's own default back.
+think = false
 
 [roles.smart_model]
 model = "qwen3.8:27b"

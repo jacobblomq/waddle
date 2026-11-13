@@ -368,13 +368,82 @@ def test_native_through_main(
     assert ("up",) not in ctl.calls
 
 
+def test_a_second_ctrl_c_cannot_cut_the_stop_short(paths: WaddlePaths) -> None:
+    """Stopping can take seconds; a signal in that time must not leave the child behind."""
+    seen: list[object] = []
+
+    class SlowStop(FakeCtl):
+        def stop_native(self) -> Result:
+            for signum in (signal.SIGINT, signal.SIGTERM):
+                os.kill(os.getpid(), signum)  # an impatient user, or a closing terminal
+            seen.append("stop finished")
+            return super().stop_native()
+
+    fake = SlowStop(paths)
+    fake.running = [True] * 50
+    leaked: list[int] = []  # signals that reached the caller's handlers during the stop
+    guarded = (signal.SIGINT, signal.SIGTERM)
+    before = {signum: signal.signal(signum, lambda n, _f: leaked.append(n)) for signum in guarded}
+
+    def interrupted(_seconds: float) -> None:
+        raise KeyboardInterrupt
+
+    try:
+        assert brain_cmd.up_native(paths, fake, sleep=interrupted) == 0
+    finally:
+        for signum, handler in before.items():
+            signal.signal(signum, handler)
+    assert leaked == [], "the stop ran without Waddle's stop handlers in place"
+    assert seen == ["stop finished"] and fake.calls[-1] == ("stop_native",)
+
+
+def test_ctrl_c_while_the_brain_starts_is_a_stop_not_a_failure(
+    paths: WaddlePaths, capsys: pytest.CaptureFixture[str]
+) -> None:
+    class Interrupted(FakeCtl):
+        def start_native(self) -> Result:
+            os.kill(os.getpid(), signal.SIGINT)  # the terminal sends it to the child as well
+            super().start_native()
+            return Result(Outcome.FAILED, "The brain stopped right away (exit status -2).")
+
+    fake = Interrupted(paths)
+    assert brain_cmd.up_native(paths, fake, sleep=lambda _s: None) == 0
+    captured = capsys.readouterr()
+    assert "stopped right away" not in captured.err and "The brain is stopped." in captured.out
+    assert fake.calls == [("start_native",), ("stop_native",)]
+    fake.native_result = UNAVAILABLE  # a real reason is still told, Ctrl-C or not
+
+    class Missing(FakeCtl):
+        def start_native(self) -> Result:
+            os.kill(os.getpid(), signal.SIGINT)
+            return UNAVAILABLE
+
+    assert brain_cmd.up_native(paths, Missing(paths), sleep=lambda _s: None) == 2
+    assert UNAVAILABLE.reason in capsys.readouterr().err
+
+
+def test_ctrl_c_during_a_long_step_ends_without_a_traceback(
+    ctl: FakeCtl, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def interrupted(_role: Role, *, progress: bool = False) -> Result:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(ctl, "pull_model", interrupted)
+    try:
+        code = cli.main(["models", "pull", "embedder"])
+    except KeyboardInterrupt:
+        pytest.fail("Ctrl-C escaped main() and would print a traceback")
+    assert code == 130
+    assert "Stopped." in capsys.readouterr().err
+
+
 # ---- models pull ---------------------------------------------------------------------------
 
 
 def test_pull_one_role_shows_the_configured_name(capsys: pytest.CaptureFixture[str]) -> None:
     fake = FakeCtl()
     assert models_cmd.pull(fake, "embedder", lambda: NAMES) == 0
-    assert fake.calls == [("pull", "embedder", True)]
+    assert fake.calls == [("status",), ("pull", "embedder", True)]
     out = capsys.readouterr().out
     assert "embedder: downloading emb-x:3" in out
     assert "GB" not in out and "MB" not in out, "sizes come from the download, not from us"
@@ -384,6 +453,7 @@ def test_pull_all_pulls_every_role_in_order() -> None:
     fake = FakeCtl()
     assert models_cmd.pull(fake, "all", lambda: NAMES) == 0
     assert fake.calls == [
+        ("status",),
         ("pull", "fast_vlm", True),
         ("pull", "smart_model", True),
         ("pull", "embedder", True),
@@ -408,7 +478,7 @@ def test_pull_of_a_model_name_through_main_is_refused(
     assert cli.main(["models", "pull", "qwen3.5:9b"]) == 2
     assert ctl.calls == []
     assert cli.main(["models", "pull", "embedder"]) == 0  # the shipped brain.toml names it
-    assert ctl.calls == [("pull", "embedder", True)]
+    assert ctl.calls == [("status",), ("pull", "embedder", True)]
     assert compose.configured_models()["embedder"] in capsys.readouterr().out
 
 
@@ -419,10 +489,30 @@ def test_pull_all_stops_at_the_first_failure(
     fake = FakeCtl()
     fake.pull_results["smart_model"] = result
     assert models_cmd.pull(fake, "all", lambda: NAMES) == code
-    assert [call[1] for call in fake.calls] == ["fast_vlm", "smart_model"]
+    assert [call[1] for call in fake.calls[1:]] == ["fast_vlm", "smart_model"]
     captured = capsys.readouterr()
     assert result.reason in captured.err
     assert "Not downloaded: smart_model, embedder" in captured.out
+
+
+@pytest.mark.parametrize(
+    ("result", "code"),
+    [
+        (Status(Outcome.UNAVAILABLE, "Docker is installed but its service is not running."), 2),
+        (Status(Outcome.FAILED, "Docker did not finish in time."), 1),
+    ],
+)
+def test_pull_asks_first_whether_docker_can_be_used(
+    result: Status, code: int, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A download shows Docker's own output, so its failure has no reason: ask before."""
+    fake = FakeCtl()
+    fake.status_result = result
+    assert models_cmd.pull(fake, "all", lambda: NAMES) == code
+    assert fake.calls == [("status",)], "no download is tried"
+    captured = capsys.readouterr()
+    assert result.reason in captured.err and "Nothing was downloaded" in captured.err
+    assert "downloading" not in captured.out
 
 
 def test_pull_with_a_broken_config_or_a_missing_role(capsys: pytest.CaptureFixture[str]) -> None:

@@ -1097,3 +1097,138 @@ async def test_tool_result_size_is_counted_like_the_host_counts_it(tmp_path: Pat
             AnswerDelta(id="q1", text=str(len(text))),
             AnswerDone(id="q1"),
         ]
+
+
+# ---- review follow-ups -----------------------------------------------------------------------
+
+
+async def test_the_receive_queue_is_no_longer_than_the_image_store(tmp_path: Path) -> None:
+    """Frames the library reads ahead of the handler are capped at what an ask may hold.
+
+    Read off the library's connection object (websockets 17 keeps the high-water mark as
+    ``max_queue_high``): filling a real queue would need megabytes of frames per run.
+    """
+    seen: list[object] = []
+    started = asyncio.Event()
+
+    async def peek(ask: AskContext, tools: HostTools, sink: AnswerSink) -> AnswerResult:
+        started.set()
+        return await _say_hi(ask, tools, sink)
+
+    async with serving(tmp_path, FakeAnswerer(peek)) as server, connected(tmp_path) as ws:
+        await ws.send(ask())
+        await started.wait()
+        (connection,) = server._server.connections  # type: ignore[union-attr]
+        seen.append(connection.max_queue_high)
+        await collect(ws, "q1")
+    assert seen == [link.MAX_PENDING_IMAGES]
+
+
+async def test_a_swallowed_cancel_plus_the_cap_still_ends_the_ask(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An answerer that swallows the host's cancel and then runs into the length cap leaves
+    two cancel requests on the task. Both must be withdrawn, or the second one is raised
+    inside the final send and the ask never gets its terminal message."""
+    waiting = asyncio.Event()
+    real_send = server_module._Connection._send
+
+    async def send_that_suspends(self: object, message: object) -> None:
+        await asyncio.sleep(0)  # a send can wait for the socket; make it do so every time
+        await real_send(self, message)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(server_module._Connection, "_send", send_that_suspends)
+
+    async def stubborn(ask: AskContext, tools: HostTools, sink: AnswerSink) -> AnswerResult:
+        if ask.request_id != "q1":
+            return await _say_hi(ask, tools, sink)
+        waiting.set()
+        with contextlib.suppress(asyncio.CancelledError):
+            await asyncio.Event().wait()
+        # The cap's own cancel request is made at the very end of this call, so the answerer
+        # returns without it ever being raised.
+        with contextlib.suppress(asyncio.CancelledError):
+            await sink.delta("z" * 500)
+        return AnswerResult()
+
+    async with (
+        serving(tmp_path, FakeAnswerer(stubborn), max_answer_chars=200),
+        connected(tmp_path) as ws,
+    ):
+        await ws.send(ask("q1"))
+        await waiting.wait()
+        await ws.send(encode(Cancel(id="q1")))
+        *_, last = await collect(ws, "q1")
+        assert last == AnswerError(id="q1", code="cancelled")
+        await ws.send(ask("q2"))  # and the connection is free for the next ask
+        assert isinstance((await collect(ws, "q2"))[-1], AnswerDone)
+
+
+async def test_capped_answer_timings_are_clamped_to_what_the_link_accepts(
+    tmp_path: Path,
+) -> None:
+    clock = Clock()
+
+    async def slow_and_long(ask: AskContext, tools: HostTools, sink: AnswerSink) -> AnswerResult:
+        clock.now += 30 * 24 * 3600.0  # a month, by a clock gone wrong
+        await sink.delta("a" * 300)
+        await asyncio.sleep(1)
+        return AnswerResult()
+
+    async with (
+        serving(tmp_path, FakeAnswerer(slow_and_long), clock=clock, max_answer_chars=200),
+        connected(tmp_path) as ws,
+    ):
+        await ws.send(ask())
+        *_, done = await collect(ws, "q1")
+        assert isinstance(done, AnswerDone)
+        assert done.timings.first_delta_ms == link.MAX_TIMING_MS
+        assert done.timings.total_ms == link.MAX_TIMING_MS
+
+
+async def test_an_ask_right_behind_a_cancel_is_answered_not_busy(tmp_path: Path) -> None:
+    """The host ends a cancelled ask locally at once, so its next ask can arrive in the same
+    read as the cancel. It must wait for the cancelled answer to end, not be refused."""
+    started = asyncio.Event()
+
+    async def first_hangs(ask: AskContext, tools: HostTools, sink: AnswerSink) -> AnswerResult:
+        if ask.request_id == "q1":
+            started.set()
+            try:
+                await asyncio.Event().wait()
+            finally:
+                await asyncio.sleep(0.05)  # stopping a model call takes a moment
+        return await _say_hi(ask, tools, sink)
+
+    async with serving(tmp_path, FakeAnswerer(first_hangs)), connected(tmp_path) as ws:
+        await ws.send(ask("q1"))
+        await started.wait()
+        await ws.send(encode(Cancel(id="q1")))
+        await ws.send(ask("q2"))
+        assert await collect(ws, "q1") == [AnswerError(id="q1", code="cancelled")]
+        *deltas, done = await collect(ws, "q2")
+        assert isinstance(done, AnswerDone) and len(deltas) == 2
+
+
+async def test_an_ask_behind_a_cancel_that_will_not_land_is_busy_after_the_grace(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(server_module, "CANCEL_GRACE_S", 0.05)
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    async def deaf(ask: AskContext, tools: HostTools, sink: AnswerSink) -> AnswerResult:
+        started.set()
+        while not release.is_set():
+            with contextlib.suppress(asyncio.CancelledError):
+                await release.wait()
+        return AnswerResult()
+
+    async with serving(tmp_path, FakeAnswerer(deaf)), connected(tmp_path) as ws:
+        await ws.send(ask("q1"))
+        await started.wait()
+        await ws.send(encode(Cancel(id="q1")))
+        await ws.send(ask("q2"))
+        assert await recv(ws) == AnswerError(id="q2", code="busy")
+        release.set()
+        assert await collect(ws, "q1") == [AnswerError(id="q1", code="cancelled")]

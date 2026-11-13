@@ -681,3 +681,46 @@ def test_status_name_matching_handles_registry_ports_and_letter_case() -> None:
     client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
     statuses = run(OllamaProvider(config, client=client).status())
     assert [(s.available, s.loaded) for s in statuses] == [(True, True), (True, True)]
+
+
+# ---- think -------------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("think", [True, False, None])
+def test_think_is_sent_only_when_the_role_sets_it(think: bool | None) -> None:
+    role: dict[str, object] = {"model": SMART}
+    if think is not None:
+        role["think"] = think
+    config = BrainConfig.model_validate({"roles": {"smart_model": role}})
+    assert config.roles["smart_model"].think is think
+    bodies: list[dict[str, object]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        bodies.append(json.loads(request.content))
+        return httpx.Response(200, content=ndjson(piece("ok", done=True)))
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    provider = OllamaProvider(config, client=client)
+    assert run(collect(provider, "smart_model", [ChatMessage("user", "hi")])) == ["ok"]
+
+    (body,) = bodies
+    if think is None:
+        assert "think" not in body
+    else:
+        assert body["think"] is think
+
+
+def test_think_must_be_a_real_boolean() -> None:
+    with pytest.raises(ValueError, match="think"):
+        BrainConfig.model_validate({"roles": {"smart_model": {"model": SMART, "think": "low"}}})
+
+
+def test_the_shipped_fast_role_does_not_think_and_both_configs_agree() -> None:
+    repo = next(p for p in Path(__file__).parents if (p / "deploy" / "brain.toml").is_file())
+    shipped = tomllib.loads((repo / "deploy" / "brain.toml").read_text(encoding="utf-8"))
+    native = tomllib.loads((repo / "deploy" / "brain.native.toml").read_text(encoding="utf-8"))
+
+    assert shipped["roles"]["fast_vlm"]["think"] is False
+    assert "think" not in shipped["roles"]["smart_model"]
+    assert native["roles"] == shipped["roles"]
+    BrainConfig.model_validate({"roles": shipped["roles"]})

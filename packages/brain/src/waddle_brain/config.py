@@ -21,6 +21,9 @@ class RoleConfig(BaseModel):
     num_ctx: int = Field(8192, ge=1024, le=262_144)  # fixed: changing it reloads the model
     keep_alive_s: int = Field(300, ge=0, le=86_400)  # 0 = unload right after use
     vision: bool = False
+    # Thinking models reason before the first word of the reply. None leaves the model
+    # server's default alone; true or false is sent as the request's ``think`` setting.
+    think: bool | None = None
 
 
 class LimitsConfig(BaseModel):

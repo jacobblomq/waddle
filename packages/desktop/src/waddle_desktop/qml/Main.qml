@@ -124,6 +124,9 @@ Item {
         text: bridge.bubbleText
         expanded: bridge.bubbleExpanded
         maxLines: bridge.bubbleMaxLines
+        note: bridge.bubbleNote
+        busy: bridge.bubbleBusy
+        action: bridge.bubbleAction
         visible: bridge.bubbleText.length > 0 && !card.visible
         anchors.right: parent.right
         anchors.rightMargin: root.pad
@@ -131,6 +134,8 @@ Item {
         anchors.bottomMargin: 4
         onMoreClicked: bridge.toggleBubble()
         onDismissed: bridge.dismissBubble()
+        onStopClicked: bridge.stopStream()
+        onActionClicked: bridge.bubbleActionClick()
         onVisibleChanged: root.scheduleRects()
         onWidthChanged: root.scheduleRects()
         onHeightChanged: root.scheduleRects()

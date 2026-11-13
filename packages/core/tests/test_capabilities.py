@@ -50,7 +50,11 @@ def test_a_degradation_is_what_why_and_what_to_do() -> None:
 @pytest.mark.parametrize(
     ("reason", "why_has", "fix_has"),
     [
-        ("stopped", "not running", "waddle brain up"),
+        ("stopped", "not connected", "Wait"),
+        ("no_socket", "not running", "waddle brain up"),
+        ("protocol", "does not understand", "Update both"),
+        ("bad_handshake", "does not understand", "Update both"),
+        ("bad_hello", "does not understand", "Update both"),
         ("connect_failed", "not running", "waddle brain up"),
         ("lost", "lost contact", "waddle brain status"),
         ("unsafe_socket", "does not belong to you", "waddle doctor"),
@@ -114,22 +118,30 @@ def test_no_vision_model_is_reported_only_while_the_brain_is_up() -> None:
 
 
 @pytest.mark.parametrize(
-    ("code", "why"),
+    ("code", "why", "fix"),
     [
-        (caps.SANDBOX_NO_BWRAP, "bwrap is not installed."),
-        (caps.SANDBOX_NO_PRLIMIT, "prlimit is not installed."),
-        (caps.SANDBOX_SETUP_FAILED, "The sandbox could not be set up."),
-        (caps.SANDBOX_UNCHECKED, "The sandbox has not been checked yet."),
+        (
+            caps.SANDBOX_NO_BWRAP,
+            "bwrap is not installed.",
+            "Install bubblewrap, then run: waddle doctor",
+        ),
+        (
+            caps.SANDBOX_NO_PRLIMIT,
+            "prlimit is not installed.",
+            "Install util-linux, then run: waddle doctor",
+        ),
+        # Installing something would not help with these two: do not say it would.
+        (caps.SANDBOX_SETUP_FAILED, "The sandbox could not be set up.", "Run: waddle doctor"),
+        (caps.SANDBOX_UNCHECKED, "The sandbox has not been checked yet.", "Run: waddle doctor"),
+        ("something-new", "The sandbox could not be set up.", "Run: waddle doctor"),
     ],
 )
-def test_sandbox_off_is_one_line_and_hides_the_tools_inside_it(code: str, why: str) -> None:
+def test_sandbox_off_is_one_line_and_hides_the_tools_inside_it(
+    code: str, why: str, fix: str
+) -> None:
     cap = dataclasses.replace(ALL_GOOD, sandbox=False, sandbox_reason=code, man=False, tldr=False)
     (only,) = degradations(cap)
-    assert only == Degradation(
-        "Version checks, man pages and tldr",
-        why,
-        "Install bubblewrap and util-linux, then run: waddle doctor",
-    )
+    assert only == Degradation("Version checks, man pages and tldr", why, fix)
 
 
 def test_missing_man_and_tldr_are_separate_lines() -> None:

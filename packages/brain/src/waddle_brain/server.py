@@ -32,6 +32,8 @@ from waddle_brain.requests import ImageStore, OpenRequest, Outgoing
 from waddle_core.link import (
     IMAGE_TTL_SECONDS,
     MAX_IMAGE_BYTES,
+    MAX_PENDING_IMAGES,
+    MAX_TIMING_MS,
     AnswerDone,
     AnswerError,
     Ask,
@@ -57,6 +59,7 @@ from waddle_core.link import (
 HELLO_TIMEOUT_S: Final = 5.0
 STATUS_TIMEOUT_S: Final = 2.0  # how long the welcome waits for model status
 MAX_HANDSHAKES: Final = 8  # connections that have not said a valid hello yet
+CANCEL_GRACE_S: Final = 5.0  # how long a new ask waits for a cancelled one to finish ending
 _MAX_MESSAGE_BYTES: Final = MAX_IMAGE_BYTES + 512 + 4  # the largest binary image message
 _NO_ID: Final = "0"  # id for a refusal when the peer gave no usable one
 
@@ -155,6 +158,9 @@ class LinkServer:
             self._handle,
             sock=sock,
             max_size=_MAX_MESSAGE_BYTES,
+            # Frames read ahead of the handler, per connection and before the hello too. The
+            # library's default would let each connection park 16 full-size images in memory.
+            max_queue=MAX_PENDING_IMAGES,
             compression=None,  # local link: nothing to gain, and no inflated sizes to police
             open_timeout=HELLO_TIMEOUT_S,
             logger=_library_log,
@@ -272,7 +278,8 @@ def _other_version(first: str | bytes) -> bool:
 
 
 def _ms(seconds: float) -> int:
-    return max(0, round(seconds * 1000))
+    """Whole milliseconds, kept inside what the link's ``Timings`` accepts."""
+    return min(MAX_TIMING_MS, max(0, round(seconds * 1000)))
 
 
 class _Connection:
@@ -365,9 +372,15 @@ class _Connection:
     async def _on_ask(self, ask: Ask) -> None:
         image_ids = [ref.image_id for ref in ask.images]
         kinds = [ref.kind for ref in ask.images]
+        current = self._current
+        if current is not None and ask.id == current.id:
+            raise LinkError("duplicate_id")
+        if current is not None and current.cancel_requested and current.task is not None:
+            # The host ends a cancelled ask on its side at once and may ask again in the same
+            # breath. The cancelled answer is already stopping: let it send its terminal
+            # message first instead of calling the new ask "busy".
+            await asyncio.wait({current.task}, timeout=CANCEL_GRACE_S)
         if self._current is not None:
-            if ask.id == self._current.id:
-                raise LinkError("duplicate_id")
             self._images.claim(image_ids)  # this ask will not run: do not keep its images
             log.event("ask_refused", code="busy")
             await self._send(AnswerError(id=ask.id, code="busy"))
@@ -409,8 +422,12 @@ class _Connection:
             async with deadline:
                 result = await self._server._answerer.answer(context, request, request)
             if request.full:
-                # The cap's cancel request has not landed yet; withdraw it.
-                asyncio.current_task().uncancel()  # type: ignore[union-attr]
+                # The cap's cancel request has not landed yet; withdraw it, and any other
+                # request still pending (a host cancel the answerer swallowed): one left over
+                # would be raised inside the send below and the ask would never end.
+                task = asyncio.current_task()
+                while task is not None and task.uncancel():
+                    pass
             final = AnswerDone(
                 id=request.id, sources=result.sources, role=result.role, timings=result.timings
             )

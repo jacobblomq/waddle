@@ -132,6 +132,17 @@ def pull(ctl: Ctl, what: str, configured: Configured = configured_models) -> int
     except ComposeError:
         print("Waddle's brain config (deploy/brain.toml) is missing or not valid.", file=sys.stderr)
         return EXIT_UNAVAILABLE
+    missing = [role for role in roles if role not in names]
+    if what != ALL and missing:
+        print(f"{what}: deploy/brain.toml names no model for this role.", file=sys.stderr)
+        return EXIT_FAILED
+    # A download prints Docker's own output, so BrainCtl cannot tell why one failed. Ask
+    # first whether Docker can be used at all: that failure has a plain sentence.
+    ready = ctl.status()
+    if not ready.ok:
+        print(ready.reason or "Docker could not be asked.", file=sys.stderr)
+        print("Nothing was downloaded. See what is missing with: waddle doctor", file=sys.stderr)
+        return exit_code(ready)
     for index, role in enumerate(roles):
         name = names.get(role)
         if name is None:

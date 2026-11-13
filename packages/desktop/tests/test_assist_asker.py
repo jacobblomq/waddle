@@ -35,6 +35,7 @@ from waddle_desktop.assist.identity_service import Current
 from waddle_desktop.link.client import BrainDownError, BrainLink, Image, LinkState
 from waddle_desktop.link.tools_host import HostToolDispatcher
 from waddle_desktop.sensors.capture_client import Blind, CaptureError, Unchanged
+from waddle_desktop.sensors.senses import EyesState, Glimpse, Look
 
 TOKEN = "ab" * 32
 CANARY = "CANARY-51d9"
@@ -189,9 +190,20 @@ async def test_a_brain_error_is_relayed_as_its_code(rig: Rig) -> None:
         await rig.eyes.focus(h.win())
         await rig.asker.ask(QUESTION)
         ask = await rig.asked()
-        await rig.send(AnswerError(id=ask.id, code="model_timeout", waking=True))
+        await rig.send(AnswerError(id=ask.id, code="model_timeout", waking=False))
         await h.until(lambda: rig.ended)
         assert rig.events == [("error", "model_timeout")]
+
+
+async def test_a_timeout_while_the_model_loads_is_relayed_as_waking(rig: Rig) -> None:
+    async with rig:
+        await rig.up()
+        await rig.eyes.focus(h.win())
+        await rig.asker.ask(QUESTION)
+        ask = await rig.asked()
+        await rig.send(AnswerError(id=ask.id, code="model_timeout", waking=True))
+        await h.until(lambda: rig.ended)
+        assert rig.events == [("error", "waking")]
 
 
 async def test_link_state_changes_are_relayed(rig: Rig) -> None:
@@ -451,6 +463,9 @@ class StubLink:
         self.prewarmed: list[Role] = []
         self.cancelled: list[str] = []
         self.asks = 0
+        self.kicks = 0
+        self.sent: list[tuple[object, object, list[Image], bool, str | None]] = []
+        self.deltas: list[Callable[[str], None]] = []
 
     def ask(
         self,
@@ -466,6 +481,8 @@ class StubLink:
         on_error: Callable[[str], None],
     ) -> str:
         self.asks += 1
+        self.sent.append((app, window, list(images), can_see, blind_reason))
+        self.deltas.append(on_delta)
         if self.failure is not None:
             raise self.failure(text)
         return f"r{self.asks}"
@@ -475,6 +492,9 @@ class StubLink:
 
     def prewarm(self, role: Role) -> None:
         self.prewarmed.append(role)
+
+    def kick(self) -> None:
+        self.kicks += 1
 
 
 def stub_asker(
@@ -602,3 +622,213 @@ async def test_prewarm_while_down_does_nothing_and_reaches_the_brain_when_up(rig
         rig.asker.prewarm()
         await h.until(lambda: rig.brain.of_type(Prewarm))
         assert [p.role for p in rig.brain.of_type(Prewarm)] == ["smart_model"]
+
+
+async def test_asking_or_opening_the_window_while_down_retries_the_brain_at_once() -> None:
+    link = StubLink()
+    link.state = LinkState("down", "connect_failed")
+    events: list[tuple[str, object]] = []
+    asker = stub_asker(link, h.SensesRig(), events)
+    asker.prewarm()
+    assert link.kicks == 1 and link.prewarmed == []
+    await asker.ask(QUESTION)
+    assert link.kicks == 2 and events == [("error", "brain_down")]
+    link.state = LinkState("up")
+    asker.prewarm()
+    assert link.kicks == 2  # up: nothing to hurry
+
+
+# ---- listeners that break ----------------------------------------------------------------
+
+
+async def test_a_broken_ui_listener_neither_stops_the_question_nor_reaches_the_logs(
+    rig: Rig,
+) -> None:
+    def boom(*_args: object) -> None:
+        raise RuntimeError(CANARY)
+
+    async with rig:
+        await rig.up()
+        await rig.eyes.focus(h.win())
+        rig.asker._on_sent = boom
+        rig.asker._on_delta = boom
+        rig.asker._on_error = boom
+        with h.captured_logs() as logs:
+            await rig.asker.ask("")  # refused here: on_error raises inside ask()
+            assert not rig.asker.busy
+            await rig.asker.ask(QUESTION)
+            ask = await rig.asked()
+            await rig.send(AnswerDelta(id=ask.id, text="one"))
+            await rig.send(AnswerDone(id=ask.id, sources=("screen",), role="smart_model"))
+            await h.until(lambda: rig.ended)
+        assert rig.ended == [("done", (("screen",), "smart_model"))]
+        text = "".join(logs)
+        assert text.count("ask_callback_failed") == 3 and CANARY not in text
+
+
+async def test_a_question_whose_task_is_cancelled_while_looking_is_closed(rig: Rig) -> None:
+    async with rig:
+        await rig.up()
+        await rig.eyes.focus(h.win())
+        rig.eyes.eye.gate = asyncio.Event()
+        task = asyncio.ensure_future(rig.asker.ask(QUESTION))
+        await h.until(lambda: rig.eyes.eye.captures())
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert rig.events == [("error", "cancelled")] and not rig.asker.busy
+        await h.settle()
+        assert rig.brain.of_type(Ask) == []
+
+
+# ---- the controller's own checks, with senses that hand over a frame they should not -----
+
+
+class StaleLooker:
+    """Hands over a frame of ``shown`` while the state says something else is in front."""
+
+    def __init__(self, state: EyesState, shown: str) -> None:
+        self.state = state
+        self.shown = shown
+
+    async def look_once(self, trigger: object = None) -> Glimpse:
+        return Glimpse(Look("ok", width=1600, height=1200), h.frame(), self.shown)
+
+
+async def _state_for(window: object) -> EyesState:
+    eyes = h.SensesRig()
+    await eyes.focus(window)  # type: ignore[arg-type]
+    state = eyes.senses.state
+    await eyes.senses.stop()
+    return state
+
+
+def _ask_with(looker: StaleLooker, link: StubLink) -> AskController:
+    return AskController(
+        link=link,
+        senses=looker,  # type: ignore[arg-type]
+        identity=lambda: Current(APP, None, False, ()),
+        on_delta=lambda _text: None,
+        on_done=lambda _sources, _role: None,
+        on_error=lambda _code: None,
+    )
+
+
+async def test_a_frame_of_another_window_than_the_one_in_front_is_not_sent() -> None:
+    state = await _state_for(h.win(h.U2, caption="now in front"))
+    link = StubLink()
+    await _ask_with(StaleLooker(state, shown=h.U1), link).ask(QUESTION)
+    app, window, images, can_see, reason = link.sent[0]
+    assert (images, can_see, reason) == ([], False, "capture-failed")
+    # The window in front may still be named: the gate allows it; only the picture is old.
+    assert isinstance(window, WindowContext) and window.title == "now in front"
+    assert app == APP
+
+
+async def test_a_frame_handed_over_for_a_blocked_window_is_not_sent() -> None:
+    state = await _state_for(h.win(cls="KeePassXC", caption=f"{CANARY} - KeePassXC"))
+    assert state.blind is not None
+    link = StubLink()
+    await _ask_with(StaleLooker(state, shown=h.U1), link).ask(QUESTION)
+    assert link.sent == [(None, None, [], False, "blocked")]
+
+
+async def test_a_sighted_stub_question_carries_both_images() -> None:
+    # The two tests above would pass if no frame were ever sent: this is the other side.
+    state = await _state_for(h.win())
+    link = StubLink()
+    await _ask_with(StaleLooker(state, shown=h.U1), link).ask(QUESTION)
+    _app, window, images, can_see, reason = link.sent[0]
+    assert [kind for kind, _mime, _data in images] == ["overview", "crop"]
+    assert (can_see, reason) == (True, None)
+    assert isinstance(window, WindowContext) and (window.width, window.height) == (1600, 1200)
+
+
+async def test_pieces_of_an_older_answer_are_dropped() -> None:
+    link = StubLink()
+    events: list[tuple[str, object]] = []
+    eyes = h.SensesRig()
+    asker = stub_asker(link, eyes, events)
+    await asker.ask("first")
+    await asker.ask("second")
+    assert link.cancelled == ["r1"]
+    link.deltas[0]("late piece of the first answer")
+    assert events == []
+    link.deltas[1]("second answer")
+    assert events == [("delta", "second answer")]
+    await eyes.senses.stop()
+
+
+# ---- review additions --------------------------------------------------------------------
+
+
+async def test_a_sighted_question_logs_no_placeholder_for_its_reason(rig: Rig) -> None:
+    async with rig:
+        await rig.up()
+        await rig.eyes.focus(h.win())
+        with h.captured_logs() as logs:
+            await rig.asker.ask(QUESTION)
+        (line,) = [line for line in logs if "ask_sent" in line]
+        assert '"reason":"none"' in line and "redacted" not in line
+
+
+async def test_model_names_from_the_brain_are_cleaned_before_the_ui_hears_them(rig: Rig) -> None:
+    async with rig:
+        await rig.up()
+        dirty = ModelStatus(
+            role="smart_model", model="good‮-model\n<b>x</b>\x07", available=True, loaded=True
+        )
+        fine = ModelStatus(role="fast_vlm", model="plain:7b", available=True, loaded=False)
+        await rig.send(State(id="s1", models=(dirty, fine)))
+        await h.until(lambda: rig.states and len(rig.states[-1].models) == 2)
+        relayed = rig.states[-1]
+        assert [m.model for m in relayed.models] == ["good-model <b>x</b>", "plain:7b"]
+        assert relayed.models[1] == fine
+        assert (relayed.models[0].role, relayed.models[0].loaded) == ("smart_model", True)
+
+
+async def test_a_bug_while_sending_ends_the_question_instead_of_leaving_it_open() -> None:
+    eyes = h.SensesRig()
+    await eyes.focus(h.win())
+    link = StubLink()
+    events: list[tuple[str, object]] = []
+
+    def identity() -> Current:
+        raise RuntimeError(CANARY)
+
+    asker = AskController(
+        link=link,
+        senses=eyes.senses,
+        identity=identity,
+        on_delta=lambda text: events.append(("delta", text)),
+        on_done=lambda sources, role: events.append(("done", (sources, role))),
+        on_error=lambda code: events.append(("error", code)),
+    )
+    with h.captured_logs() as logs:
+        await asker.ask(QUESTION)  # must not raise: nobody awaits this task's result
+    assert events == [("error", "internal")] and not asker.busy
+    assert "ask_send_failed" in "".join(logs) and CANARY not in "".join(logs)
+    await eyes.senses.stop()
+
+
+async def test_a_bug_after_the_question_went_out_also_tells_the_brain_to_stop() -> None:
+    eyes = h.SensesRig()
+    await eyes.focus(h.win())
+    link = StubLink()
+    events: list[tuple[str, object]] = []
+    asker = stub_asker(link, eyes, events)
+
+    class Boom:
+        def __call__(self, *_a: object, **_k: object) -> None:
+            raise RuntimeError(CANARY)
+
+    original = asker_mod.Sent
+    asker._on_sent = lambda _sent: None
+    asker_mod.Sent = Boom()  # type: ignore[assignment,misc]
+    try:
+        await asker.ask(QUESTION)
+    finally:
+        asker_mod.Sent = original  # type: ignore[misc]
+    assert events == [("error", "internal")] and not asker.busy
+    assert link.cancelled == ["r1"]
+    await eyes.senses.stop()

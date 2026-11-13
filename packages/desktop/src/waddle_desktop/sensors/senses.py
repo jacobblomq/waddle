@@ -428,7 +428,8 @@ class Senses:
             self._drop_frame()
             return Look("blind", now.blind.value if now.blind else "stale")
         if isinstance(result, Frame):
-            if show:
+            # A one-shot look (``taken``) shows its frame only if the panel is still open now.
+            if show and (taken is None or self._watching):
                 self._frame_uuid = window.uuid
                 self._on_frame(result)
             if taken is not None:

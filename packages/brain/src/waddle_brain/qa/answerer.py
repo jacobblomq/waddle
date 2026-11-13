@@ -23,8 +23,8 @@ from waddle_brain.contracts import (
     Source,
     ToolUnavailableError,
 )
-from waddle_brain.qa.prompt import build_prompt, char_budget
-from waddle_core.link import ModelStatus, Role, Timings
+from waddle_brain.qa.prompt import app_block, build_prompt, char_budget
+from waddle_core.link import MAX_TIMING_MS, ModelStatus, Role, Timings
 from waddle_core.tools import NoArgs, ToolName
 from waddle_core.untrusted import ELLIPSIS, clean
 
@@ -110,7 +110,10 @@ class QaAnswerer:
         if not clean(ask.text, max(1, len(ask.text))).strip():
             raise ProviderError("bad_request")  # nothing printable was asked
         role, images = self._choose(ask)
-        tool_result = await self._app_state(tools) if ask.app is None else None
+        # Ask the host what the app is whenever the ask does not name it: no app at all, or
+        # one whose name did not pass validation (the host sends an empty context then).
+        named = app_block(ask.app)[1]
+        tool_result = None if named else await self._app_state(tools)
         prompt = build_prompt(
             ask,
             images=images,
@@ -172,4 +175,5 @@ class QaAnswerer:
 
 
 def _ms(seconds: float) -> int:
-    return max(0, round(seconds * 1000))
+    """Whole milliseconds, kept inside what the link's ``Timings`` accepts."""
+    return min(MAX_TIMING_MS, max(0, round(seconds * 1000)))

@@ -70,7 +70,7 @@ _TRAILING_NUMBER: Final = re.compile(r"(?:[A-Za-z]{1,20} ){0,4}[vV]?(\d{1,6})")
 
 @dataclass(frozen=True)
 class ProbeText:
-    """What a version probe printed. Untrusted text; empty when the program failed."""
+    """What a version probe printed on a clean run. Untrusted text; may be empty."""
 
     text: str
 
@@ -106,15 +106,17 @@ def exe_stat(path: str) -> tuple[int, int] | None:
 def sandbox_probe(probe_version: Callable[[Path, str], Awaitable[ExecResult]]) -> Probe:
     """Adapt ``ReadOnlyExec.probe_version`` to the ``probe`` argument of ``refine_identity``.
 
-    "Nothing ran" (no sandbox, refused argument) becomes None, so it is tried again another
-    time; a program that ran and failed or hung becomes empty text, which is remembered.
+    Only a clean run is an answer: its output is parsed, and "ran, printed no version" is
+    remembered for this binary. Everything else becomes None and is tried again another
+    time: no sandbox, a refused argument, a missing tool, and also a timeout or a failed
+    run, which can be a busy machine rather than a program with nothing to say.
     """
 
     async def probe(exe: Path, flag: str) -> ProbeText | None:
         result = await probe_version(exe, flag)
-        if result.reason in (Reason.UNAVAILABLE, Reason.INVALID):
-            return None
-        return ProbeText(result.text if result.ok else "")
+        if result.ok and result.reason in (Reason.OK, Reason.TRUNCATED):
+            return ProbeText(result.text)
+        return None
 
     return probe
 

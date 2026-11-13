@@ -67,10 +67,14 @@ async def _serve(
         log.warning("brain_start_failed", code=exc.code)
         return 3
     finally:
-        await server.stop()
-        await provider.close()
-        for signum in (signal.SIGTERM, signal.SIGINT):
-            loop.remove_signal_handler(signum)
+        try:
+            await server.stop()
+        finally:  # the model client is closed whatever stopping the server did
+            try:
+                await provider.close()
+            finally:
+                for signum in (signal.SIGTERM, signal.SIGINT):
+                    loop.remove_signal_handler(signum)
     return 0
 
 

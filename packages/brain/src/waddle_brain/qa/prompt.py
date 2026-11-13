@@ -67,7 +67,9 @@ _MAX_VERSION: Final = 32
 _MAX_ENUM: Final = 16
 _MAX_EDITION: Final = 32
 
-# The host's reason codes (waddle_core.privacy.BlindReason, plus the capture helper's).
+# The host's reason codes: every waddle_core.privacy.BlindReason value (a test keeps the two
+# in step), plus the desktop's own two for a look that gave no picture. Anything else gets
+# the generic line.
 _BLIND: Final = {
     "locked": "the screen is locked",
     "unknown-lock": "Waddle cannot tell whether the screen is locked, so it does not look",
@@ -76,6 +78,7 @@ _BLIND: Final = {
     "own-window": "the focused window is Waddle's own",
     "no-window": "no app window is focused",
     "helper-missing": "Waddle's screen capture helper is not installed or not running",
+    "capture-failed": "Waddle tried to look, but taking the picture did not work",
 }
 _BLIND_OTHER: Final = "Waddle could not look at the screen just now"
 

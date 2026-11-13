@@ -9,9 +9,33 @@ import asyncio
 import threading
 from collections.abc import Callable, Coroutine
 from concurrent.futures import Future
+from pathlib import Path
 from typing import Any
 
 from PySide6.QtCore import QObject, Signal
+
+from waddle_desktop import log
+
+
+def error_site(exc: BaseException | None) -> str:
+    """Where an error was raised, as "module:line". Never its text, which may quote data."""
+    tb = exc.__traceback__ if exc is not None else None
+    if tb is None:
+        return "unknown"
+    while tb.tb_next is not None:
+        tb = tb.tb_next
+    return f"{Path(tb.tb_frame.f_code.co_filename).stem}:{tb.tb_lineno}"
+
+
+def _on_loop_error(_loop: asyncio.AbstractEventLoop, context: dict[str, Any]) -> None:
+    """An error nobody caught on the I/O loop (a callback, or a task nobody awaited).
+
+    asyncio would print the traceback with the error's text, and that text can quote a window
+    title, a path or an answer. The log gets the kind of error and where it was raised.
+    """
+    exc = context.get("exception")
+    kind = type(exc).__name__ if isinstance(exc, BaseException) else "none"
+    log.warning("io_error", kind=kind, where=error_site(exc))
 
 
 class HostEvents(QObject):
@@ -24,11 +48,20 @@ class HostEvents(QObject):
     frame = Signal(object)  # Frame | None
     hotkey = Signal(str, bool)  # action id, pressed
     hotkeysBound = Signal(object)  # dict: action id -> key as text ("" if none)
+    # The brain and the answer. ``turn`` is the UI's number for the question an event belongs
+    # to, so an event of an older question that was still queued can be told apart.
+    linkState = Signal(object)  # LinkState
+    answerDelta = Signal(int, str)  # turn, cleaned text (show as plain text only)
+    answerDone = Signal(int, object, object)  # turn, source labels, VersionAsk | None
+    answerError = Signal(int, str)  # turn, error code
+    identity = Signal(object)  # VersionAsk | None: the app in front needs you to say its version
+    versionApplied = Signal(str, str)  # "ok" | "unreadable" | "moved", then "App 1.2"
 
 
 class IoThread:
     def __init__(self) -> None:
         self._loop = asyncio.new_event_loop()
+        self._loop.set_exception_handler(_on_loop_error)
         self._thread = threading.Thread(target=self._run, name="waddle-io", daemon=True)
         self._started = threading.Event()
 

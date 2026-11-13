@@ -406,3 +406,109 @@ async def test_the_listener_copes_with_many_quick_focus_changes(
     await h.until(lambda: rig.changes == 1)
     assert refine.calls == [("good", "t0"), ("good", "t29")]  # the ones in between never ran
     assert refine.most_active == 1
+
+
+# ---- between a title change and its refinement -------------------------------------------
+
+
+async def test_a_title_change_keeps_the_last_answer_until_the_new_one_is_ready(
+    tmp_path: Path,
+) -> None:
+    refine = GatedRefine()
+    rig = Rig(tmp_path, refine=refine)
+    rig.senses.identity = h.ident(version=None, confidence=0.3, source="unknown")
+    await rig.senses.focus(h.win(caption="one"))
+    await h.until(lambda: len(refine.calls) == 1)
+    assert rig.service.current().app.version is None  # type: ignore[union-attr]
+    refine.gates[0].set()
+    await rig.refined()
+    assert rig.service.current().app.version == "9.9"  # type: ignore[union-attr]
+
+    rig.senses.senses.target_changed(h.win(caption="two"))
+    await h.until(lambda: len(refine.calls) == 2)
+    assert not rig.service.settled
+    app = rig.service.current().app  # the probe's answer still holds for the same binary
+    assert app is not None and (app.version, app.version_source) == ("9.9", "version-probe")
+
+    # Another process behind the same window id is another app: nothing is carried over.
+    rig.senses.identity = h.ident("other", exe="/usr/bin/other", version=None)
+    await rig.senses.focus(h.win(caption="three", pid=77))
+    app = rig.service.current().app
+    assert app is not None and (app.name, app.version) == ("other", None)
+    await rig.service.stop()
+
+
+async def test_an_answer_read_from_the_old_title_does_not_outlive_that_title(
+    tmp_path: Path,
+) -> None:
+    rig = Rig(tmp_path)
+    rig.senses.identity = h.ident(version=None, confidence=0.3, source="unknown")
+    await rig.senses.focus(h.win(caption="scene - Good 5.3"))
+    await rig.refined()
+    app = rig.service.current().app
+    assert app is not None and (app.version, app.version_source) == ("5.3", "caption")
+
+    gated = GatedRefine()
+    rig.service._refine = gated
+    rig.senses.senses.target_changed(h.win(caption="scene"))
+    await h.until(lambda: gated.calls)
+    app = rig.service.current().app
+    assert app is not None and app.version is None  # "5.3" was the old title's claim
+    await rig.service.stop()
+
+
+async def test_an_app_without_a_name_is_not_asked_about(tmp_path: Path) -> None:
+    rig = Rig(tmp_path)
+    rig.senses.identity = h.ident(name="", exe="", version=None)
+    await rig.senses.focus(h.win(cls="mystery", caption="?"))
+    await rig.refined()
+    assert rig.service.current() == NOTHING
+
+
+async def test_what_was_known_about_a_window_is_dropped_when_it_turns_private(
+    tmp_path: Path,
+) -> None:
+    refine = GatedRefine()
+    rig = Rig(tmp_path, refine=refine)
+    rig.senses.identity = h.ident(version=None, confidence=0.3, source="unknown")
+    await rig.senses.focus(h.win(cls="firefox", caption="News"))
+    await h.until(lambda: refine.calls)
+    refine.gates[0].set()
+    await rig.refined()
+    assert rig.service.current().app.version == "9.9"  # type: ignore[union-attr]
+    rig.senses.senses.target_changed(h.win(cls="firefox", caption="x (Private Browsing)"))
+    assert rig.service.current() == NOTHING
+    rig.senses.senses.target_changed(h.win(cls="firefox", caption="Sports"))
+    await h.until(lambda: len(refine.calls) == 2)
+    # Nothing was carried across the private spell: this is worked out afresh.
+    assert rig.service.current().app.version is None  # type: ignore[union-attr]
+    await rig.service.stop()
+
+
+async def test_a_bug_while_storing_a_result_does_not_end_refinement_for_good(
+    tmp_path: Path,
+) -> None:
+    calls = 0
+
+    def stat(_path: str) -> tuple[int, int] | None:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise RuntimeError(CANARY)
+        return None
+
+    async def refine(base: AppIdentity, **_kw: object) -> Refined:
+        return Refined(base, needs_user=True, about_path=("Help", "About"))
+
+    rig = Rig(tmp_path, refine=refine, stat=stat)
+    rig.senses.identity = h.ident(version=None, confidence=0.3, source="unknown")
+    with h.captured_logs() as logs:
+        await rig.senses.focus(h.win(caption="one"))
+        await h.until(lambda: any("identity_work_error" in line for line in logs))
+        task = rig.service._task
+        assert task is not None and task.done() and task.exception() is None
+    assert CANARY not in "".join(logs)
+    rig.senses.senses.target_changed(h.win(caption="two"))
+    await rig.refined()
+    assert rig.service.current().needs_user
+    await rig.service.stop()

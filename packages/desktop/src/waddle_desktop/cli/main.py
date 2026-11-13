@@ -237,7 +237,13 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    result: int = args.func(args)
+    try:
+        result: int = args.func(args)
+    except KeyboardInterrupt:
+        # Ctrl-C during a long step (a build, a download). Docker got the same Ctrl-C from
+        # the terminal; what it had already downloaded is kept.
+        print("\nStopped.", file=sys.stderr)
+        return 130
     return result
 
 

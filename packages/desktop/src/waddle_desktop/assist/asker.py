@@ -22,8 +22,9 @@ signals.
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Final, Protocol
 
 from waddle_core.link import (
@@ -34,6 +35,7 @@ from waddle_core.link import (
     AnswerDone,
     AppContext,
     LinkError,
+    ModelStatus,
     Role,
     WindowContext,
 )
@@ -48,9 +50,12 @@ from waddle_desktop.sensors.senses import EyesState, Glimpse, Look
 
 # on_error codes this controller adds to the brain's (``waddle_core.link.ErrorCode``) and the
 # link's own ``brain_lost`` and ``cancelled``.
+# ``internal`` (also one of the brain's) is used here for a bug on this side while sending.
 BRAIN_DOWN: Final = "brain_down"  # the question was not sent: there is no link right now
 BAD_REQUEST: Final = "bad_request"  # nothing to ask, or it could not go on the wire
 TOO_LARGE: Final = "too_large"  # the question, or the answer, is longer than allowed
+INTERNAL: Final = "internal"  # a bug on this side; the question is closed, not left hanging
+_MODEL_CHARS: Final = 128
 MAX_ANSWER_CHARS: Final = 24_000  # the brain has its own, lower cap; this is the backstop
 # The role that answers a question (waddle_brain/qa: smart_model, else fast_vlm).
 ANSWER_ROLE: Final[Role] = "smart_model"
@@ -62,6 +67,7 @@ __all__ = [
     "BRAIN_DOWN",
     "BRAIN_LOST",
     "CANCELLED",
+    "INTERNAL",
     "MAX_ANSWER_CHARS",
     "TOO_LARGE",
     "AskController",
@@ -91,6 +97,7 @@ class AskLink(Protocol):
     ) -> str: ...
     def cancel(self, request_id: str) -> None: ...
     def prewarm(self, role: Role) -> None: ...
+    def kick(self) -> None: ...
 
 
 class Looker(Protocol):
@@ -126,6 +133,11 @@ def frame_images(frame: Frame) -> list[Image]:
     if 0 < len(frame.crop) <= MAX_IMAGE_BYTES:
         images.append(("crop", "image/png", frame.crop))
     return images[:MAX_IMAGES_PER_ASK]
+
+
+def _shown(model: ModelStatus) -> ModelStatus:
+    name = sight.one_line(model.model, _MODEL_CHARS)
+    return model if name == model.model else model.model_copy(update={"model": name})
 
 
 class AskController:
@@ -178,15 +190,27 @@ class AskController:
         if len(text) > MAX_QUESTION_CHARS:
             return self._fail(turn, TOO_LARGE)
         if self._link.state.status != "up":
+            self._link.kick()  # you just asked: try the brain again now, not after the backoff
             return self._fail(turn, BRAIN_DOWN)  # and no look: nobody would see the picture
         try:
             glimpse = await self._senses.look_once(Trigger.USER_ASK)
-        except Exception as exc:  # CancelledError is not caught: it ends the question
+        except asyncio.CancelledError:
+            self._fail(turn, CANCELLED)  # the task itself was stopped: do not stay "busy"
+            raise
+        except Exception as exc:
             log.warning("ask_look_failed", kind=type(exc).__name__)
             glimpse = Glimpse(Look("error", "internal"))
         if turn != self._turn or not self._open:
             return None  # cancelled or replaced while looking; the frame is dropped here
-        self._send(turn, text, glimpse)
+        try:
+            self._send(turn, text, glimpse)
+        except Exception as exc:
+            # Nobody awaits this task: an error here would leave the question open for good.
+            log.warning("ask_send_failed", kind=type(exc).__name__)
+            request_id = self._request_id if turn == self._turn else None
+            self._fail(turn, INTERNAL)
+            if request_id is not None:
+                self._link.cancel(request_id)  # it went out: tell the brain to stop
         return None
 
     def cancel(self) -> None:
@@ -203,6 +227,7 @@ class AskController:
         """The Ask window opened: have the answering model loaded. Nothing happens if down."""
         state = self._link.state
         if state.status != "up":
+            self._link.kick()  # the Ask window opened: reach for the brain now
             return
         ready = {model.role for model in state.models if model.available}
         role = FALLBACK_ROLE if ANSWER_ROLE not in ready and FALLBACK_ROLE in ready else ANSWER_ROLE
@@ -210,9 +235,14 @@ class AskController:
         log.event("ask_prewarm", role=role)
 
     def link_state(self, state: LinkState) -> None:
-        """Give this to ``BrainLink`` as its ``on_state``."""
+        """Give this to ``BrainLink`` as its ``on_state``.
+
+        Model names are text from the brain: they are passed on as one clean line each.
+        """
         if self._on_state is not None:
-            self._on_state(state)
+            on_state = self._on_state
+            shown = replace(state, models=tuple(_shown(model) for model in state.models))
+            self._tell("on_state", lambda: on_state(shown))
 
     # ---- one question --------------------------------------------------------------------
 
@@ -273,12 +303,14 @@ class AskController:
             "ask_sent",
             can_see=bool(images),
             images=len(images),
-            reason=reason or "",
+            reason=reason or "none",
             has_app=app is not None,
             has_window=window is not None,
         )
         if self._on_sent is not None:
-            self._on_sent(Sent(bool(images), reason, len(images), size, app, window is not None))
+            sent = Sent(bool(images), reason, len(images), size, app, window is not None)
+            on_sent = self._on_sent
+            self._tell("on_sent", lambda: on_sent(sent))
         return None
 
     def _delta(self, turn: int, piece: str) -> None:
@@ -296,22 +328,31 @@ class AskController:
             if request_id is not None:
                 self._link.cancel(request_id)
             return
-        self._on_delta(text)
+        self._tell("on_delta", lambda: self._on_delta(text))
 
     def _done(self, turn: int, done: AnswerDone) -> None:
         if turn != self._turn or not self._open:
             return
         self._close()
         log.event("ask_done", sources=len(done.sources), chars=self._chars)
-        self._on_done(tuple(done.sources), done.role)
+        sources, role = tuple(done.sources), done.role
+        self._tell("on_done", lambda: self._on_done(sources, role))
 
     def _fail(self, turn: int, code: str) -> None:
         if turn != self._turn or not self._open:
             return
         self._close()
         log.event("ask_failed", code=code)
-        self._on_error(code)
+        self._tell("on_error", lambda: self._on_error(code))
 
     def _close(self) -> None:
         self._open = False
         self._request_id = None
+
+    @staticmethod
+    def _tell(name: str, call: Callable[[], None]) -> None:
+        """Call a listener of the UI layer. Its failure is its own; the question goes on."""
+        try:
+            call()
+        except Exception as exc:  # the text of the error may quote the answer: kind only
+            log.warning("ask_callback_failed", callback=name, kind=type(exc).__name__)

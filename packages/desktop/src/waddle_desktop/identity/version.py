@@ -63,7 +63,8 @@ class Channel(StrEnum):
 # A dotted number that does not start in the middle of a word or of another number, so
 # "python3.12", "x86_64" and hex build hashes do not count.
 _DOTTED: Final = re.compile(r"(?<![0-9A-Za-z.])[vV]?(\d{1,7}(?:\.\d{1,7}){1,7})(?![0-9])")
-_WORDS: Final = "alpha|beta|rc|nightly|daily|snapshot|preview|pre|dev"
+# "Release Candidate" is how About boxes and splash screens spell out "rc".
+_WORDS: Final = "alpha|beta|rc|release[ _-]?candidate|nightly|daily|snapshot|preview|pre|dev"
 # The whole string is one integer, optionally with a pre-release word ("132", "v7 beta").
 _BARE: Final = re.compile(rf"[vV]?(\d{{1,6}})(?:[ ._~+-]?(?:{_WORDS})\d*)?", re.IGNORECASE)
 _EPOCH: Final = re.compile(r"^\d{1,4}:")
@@ -88,6 +89,12 @@ _PRE_NAMES: Final = {
 _TAIL: Final = 48
 
 
+def _pre_name(word: str) -> str:
+    """The canonical tag for a matched pre-release word or short form."""
+    word = word.lower()
+    return "rc" if word.startswith("release") else _PRE_NAMES[word]
+
+
 def _as_text(value: object) -> str:
     """Callers pass strings from D-Bus and files: anything else counts as empty."""
     return value[:MAX_TEXT] if isinstance(value, str) else ""
@@ -97,9 +104,9 @@ def _pre_of(tail: str) -> str:
     tail = tail[:_TAIL]
     attached = _ATTACHED.match(tail)
     if attached:
-        return _PRE_NAMES[(attached.group(1) or attached.group(2)).lower()]
+        return _pre_name(attached.group(1) or attached.group(2))
     word = _PRE_WORD.search(tail)
-    return _PRE_NAMES[word.group(1).lower()] if word else ""
+    return _pre_name(word.group(1)) if word else ""
 
 
 def _scan(text: object) -> tuple[Version, str] | None:
@@ -158,7 +165,7 @@ _CHANNEL_ORDER: Final = (
 def detect_channel(raw: str) -> Channel:
     """Release channel named by a raw version or product string; STABLE when it names none."""
     raw = _as_text(raw)
-    seen = {_PRE_NAMES[m.group(1).lower()] for m in _PRE_WORD.finditer(raw)}
+    seen = {_pre_name(m.group(1)) for m in _PRE_WORD.finditer(raw)}
     version = parse_version(raw)
     if version and version.pre:
         seen.add(version.pre)

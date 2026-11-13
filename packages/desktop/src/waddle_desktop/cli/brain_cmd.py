@@ -130,23 +130,26 @@ def up_native(paths: WaddlePaths, ctl: Ctl, sleep: Callable[[float], None] = tim
     print()
     if not _token_ready(paths):
         return EXIT_UNAVAILABLE
-    asked_to_stop = False
-    try:
-        with _stop_signals() as stop:
+    failure: Result | None = None
+    with _stop_signals() as stop:
+        try:
             result = ctl.start_native()
-            if not result.ok:
-                return _problem(result, "Its own messages, if any, are above.")
-            print("The brain is running. Keep this terminal open; press Ctrl-C to stop it.")
-            try:
+            if result.ok:
+                print("The brain is running. Keep this terminal open; press Ctrl-C to stop it.")
                 while not stop.requested and ctl.native_running():
                     sleep(NATIVE_POLL_SECONDS)
-            except KeyboardInterrupt:
-                stop.requested = True
-            asked_to_stop = stop.requested
-    except KeyboardInterrupt:
-        asked_to_stop = True
-    finally:
-        ctl.stop_native()  # always: this command must not leave the brain behind
+            else:
+                failure = result
+        except KeyboardInterrupt:
+            stop.requested = True
+        finally:
+            # Always, and with the stop signals still held: a second Ctrl-C while the child
+            # is being stopped must not cut the stop short and leave the brain behind.
+            ctl.stop_native()
+        asked_to_stop = stop.requested
+    # A Ctrl-C while the brain was starting ends the child too; that is a stop, not a failure.
+    if failure is not None and not (asked_to_stop and failure.outcome is Outcome.FAILED):
+        return _problem(failure, "Its own messages, if any, are above.")
     if asked_to_stop:
         print("\nThe brain is stopped.")
         return EXIT_OK

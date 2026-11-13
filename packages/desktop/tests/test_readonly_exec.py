@@ -6,6 +6,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import resource
 import stat
 import sys
 import time
@@ -81,6 +82,7 @@ def test_the_profile_is_exactly_this_argv(fake_root: Path) -> None:
         "--cpu=2",
         "--fsize=30",
         "--nproc=4",
+        "--core=0",
         "--",
         "man",
         "--",
@@ -776,6 +778,24 @@ async def test_real_limits_stop_large_files(real: ReadOnlyExec, tmp_path: Path) 
     exe = script(tmp_path, "head -c 3000000 /dev/zero >/tmp/big\necho rc:$?\n")
     result = await real.probe_version(exe, "--version")
     assert "rc:153" in result.text  # head was stopped by the file size limit (128 + SIGXFSZ)
+
+
+async def test_real_limits_allow_no_core_dump(real: ReadOnlyExec, tmp_path: Path) -> None:
+    # The limit is inherited, so the check only means something if this process itself may
+    # dump core. Raise the test's own limit for the length of the run, then put it back.
+    soft, hard = resource.getrlimit(resource.RLIMIT_CORE)
+    wanted = 1 << 20 if hard == resource.RLIM_INFINITY else min(hard, 1 << 20)
+    try:
+        resource.setrlimit(resource.RLIMIT_CORE, (wanted, hard))
+    except (ValueError, OSError):
+        wanted = soft
+    if wanted == 0:
+        pytest.skip("core dumps are already off for this process: nothing to tell apart")
+    try:
+        result = await real.probe_version(script(tmp_path, "echo core:$(ulimit -c)\n"), "--version")
+    finally:
+        resource.setrlimit(resource.RLIMIT_CORE, (soft, hard))
+    assert result.text.split() == ["core:0"]  # a probed program that crashes writes no core
 
 
 async def test_real_probe_of_a_system_program(real: ReadOnlyExec) -> None:

@@ -334,3 +334,94 @@ async def test_the_sandbox_reason_becomes_a_capability_code(reason: str, code: s
     shared = SharedExec(lambda: h.FakeExec(available=False, reason=reason))
     await shared.ready()
     assert shared.capability == (False, code)
+
+
+# ---- review additions: system_stats must not hold up the I/O loop ------------------------
+
+
+def _stats_backends(stats: object) -> HostBackends:
+    rig = h.SensesRig()
+    return HostBackends(
+        eyes=lambda: rig.senses.state,
+        identity=lambda: NOTHING,
+        sandbox=SharedExec(h.FakeExec),
+        helper_installed=lambda: True,
+        stats=stats,  # type: ignore[arg-type]
+    )
+
+
+async def test_system_stats_are_read_off_the_io_loop() -> None:
+    import threading
+
+    seen: list[int] = []
+
+    def stats(_topic: str) -> dict[str, object]:
+        seen.append(threading.get_ident())
+        return {"ok": True}
+
+    assert await _stats_backends(stats).system_stats("disk") == {"ok": True}
+    assert seen and seen[0] != threading.get_ident()
+
+
+async def test_stuck_system_stats_readers_are_bounded_and_do_not_block_the_loop() -> None:
+    import asyncio
+    import threading
+
+    from waddle_desktop.assist.backends import MAX_STATS_READERS
+
+    release = threading.Event()
+    started = 0
+
+    def stats(_topic: str) -> dict[str, object]:
+        nonlocal started
+        started += 1
+        release.wait(5)  # a filesystem that does not answer
+        return {"n": 1}
+
+    backends = _stats_backends(stats)
+    waiting = [
+        asyncio.ensure_future(backends.system_stats("disk")) for _ in range(MAX_STATS_READERS)
+    ]
+    await h.until(lambda: started == MAX_STATS_READERS)  # the loop is still turning
+    with pytest.raises(ToolError) as refused:
+        await backends.system_stats("disk")
+    assert refused.value.code == "unavailable" and started == MAX_STATS_READERS
+    # The dispatcher gives up on them (its timeout cancels); the stuck readers still count.
+    for task in waiting:
+        task.cancel()
+    await asyncio.gather(*waiting, return_exceptions=True)
+    with pytest.raises(ToolError):
+        await backends.system_stats("disk")
+    release.set()
+    await h.until(lambda: backends._stats_running == 0)
+    assert await backends.system_stats("disk") == {"n": 1}
+
+
+async def test_a_stats_reader_that_fails_after_nobody_waits_leaves_no_trace() -> None:
+    import asyncio
+    import threading
+
+    release = threading.Event()
+
+    def stats(_topic: str) -> dict[str, object]:
+        release.wait(5)
+        raise RuntimeError(CANARY)
+
+    backends = _stats_backends(stats)
+    loop = asyncio.get_running_loop()
+    reported: list[dict[str, object]] = []
+    loop.set_exception_handler(lambda _loop, context: reported.append(context))
+    try:
+        task = asyncio.ensure_future(backends.system_stats("disk"))
+        await h.until(lambda: backends._stats_running == 1)
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+        release.set()
+        await h.until(lambda: backends._stats_running == 0)
+        import gc
+
+        gc.collect()
+        await h.settle()
+    finally:
+        loop.set_exception_handler(None)
+    assert reported == []

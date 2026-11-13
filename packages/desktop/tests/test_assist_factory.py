@@ -230,3 +230,23 @@ async def test_capabilities_follow_the_link_the_helper_and_the_sandbox(root: Pat
     assert (failed.capture, failed.capture_reason) == (False, caps.CAPTURE_HELPER_FAILED)
     await rig.close()
     assert assist.capabilities().brain == "down"
+
+
+async def test_a_brain_without_an_answering_model_is_not_said_to_read_screenshots(
+    root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from waddle_core.link import ModelStatus
+
+    for models in (
+        (),
+        (ModelStatus(role="embedder", model="e", available=True, loaded=True),),
+        (ModelStatus(role="smart_model", model="s", available=False, loaded=False),),
+    ):
+        monkeypatch.setattr(fb, "MODELS", models)
+        rig = Rig(Path(tempfile.mkdtemp(dir=root)))
+        assist = rig.build()
+        await rig.up()
+        cap = assist.capabilities()
+        assert (cap.brain, cap.vision, cap.can_see_screen) == ("up", False, False)
+        assert "Reading screenshots" in [d.what for d in degradations(cap)]
+        await rig.close()

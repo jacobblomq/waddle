@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
+import json
 import os
 from pathlib import Path
 
@@ -350,8 +351,8 @@ async def test_sandbox_probe_adapter() -> None:
 
     probe = sandbox_probe(run)
     assert await probe(Path("/x/ok"), "-V") == ProbeText("good 3.1")
-    assert await probe(Path("/x/failed"), "-V") == ProbeText("")
-    assert await probe(Path("/x/timeout"), "-V") == ProbeText("")
+    assert await probe(Path("/x/failed"), "-V") is None
+    assert await probe(Path("/x/timeout"), "-V") is None
     assert await probe(Path("/x/invalid"), "-V") is None
     assert await probe(Path("/x/unavailable"), "-V") is None
 
@@ -377,8 +378,12 @@ async def test_log_lines_carry_no_title_path_or_version(
     await refine(app(exe), caption="secret project - Good 5.3", probe=FakeProbe(ProbeText("x")))
     err = capsys.readouterr().err
     assert '"event":"identity_refined"' in err and '"source":"caption"' in err
+    # The time stamp is left out of the check: its digits can spell "5.3" by chance.
+    lines = [json.loads(line) for line in err.splitlines()]
+    said = json.dumps([{key: value for key, value in line.items() if key != "t"} for line in lines])
+    assert "identity_refined" in said
     for private in ("secret", "5.3", str(exe), "goodapp"):
-        assert private not in err
+        assert private not in said
 
 
 # ---- web apps --------------------------------------------------------------------------------

@@ -369,6 +369,15 @@ def test_render_counts_what_was_not_checked() -> None:
     assert doctor.render([Check("gpu", BAD, "x")]).endswith("1 problem(s), 0 warning(s).")
 
 
+def test_render_keeps_control_characters_and_line_breaks_out_of_the_terminal() -> None:
+    hostile = "taken by \x1b[2J\x1b]0;x\x07Evil\n✓ all fine\u202e"
+    text = doctor.render([Check("hotkeys", WARN, hostile, "fix \x1b[31m\r\nnow")])
+    assert "\x1b" not in text and "\x07" not in text and "\u202e" not in text and "\r" not in text
+    assert text.splitlines()[1].startswith("  ! taken by ") and "✓ all fine" in text.splitlines()[1]
+    assert text.splitlines()[2] == "      → fix [31m now"
+    assert len(doctor.render([Check("apps", WARN, "x" * 5000)]).splitlines()[1]) < 500
+
+
 def test_collect_has_every_new_area_and_uses_the_given_ctl(
     paths: WaddlePaths, monkeypatch: pytest.MonkeyPatch
 ) -> None:

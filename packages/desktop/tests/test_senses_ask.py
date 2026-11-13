@@ -94,3 +94,18 @@ async def test_listeners_hear_every_state_and_cannot_break_the_senses() -> None:
     assert heard == rig.states and heard[-1].identity is not None
     assert any("senses.listener_failed" in line for line in logs)
     assert "CANARY" not in "".join(logs)
+
+
+async def test_a_look_once_frame_is_not_shown_once_the_eyes_panel_has_closed() -> None:
+    rig = h.SensesRig()
+    await rig.focus(h.win())
+    rig.senses.set_watching(True)
+    rig.eye.gate = asyncio.Event()
+    looking = asyncio.ensure_future(rig.senses.look_once())
+    await h.until(rig.eye.captures)
+    rig.senses.set_watching(False)  # the panel closed while the helper was busy
+    rig.eye.gate.set()
+    glimpse = await looking
+    assert glimpse.frame is not None  # the question still gets its picture
+    assert [f for f in rig.frames if f is not None] == []  # but nobody is shown it (D-049)
+    await rig.senses.stop()

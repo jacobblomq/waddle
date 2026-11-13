@@ -91,13 +91,6 @@ def capture_capability(state: EyesState, *, helper_installed: bool) -> tuple[boo
     return True, ""
 
 
-def window_title(state: EyesState) -> str:
-    """The focused window's title, or "" unless the gate allows looking at that window."""
-    if state.blind is not None or state.window is None:
-        return ""
-    return one_line(state.window.caption, MAX_TITLE_CHARS)
-
-
 def window_context(state: EyesState, frame: Frame | None = None) -> WindowContext | None:
     """The window as the link describes it, or None unless the gate allows looking at it."""
     window = state.window

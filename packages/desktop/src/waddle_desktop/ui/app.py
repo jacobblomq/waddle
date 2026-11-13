@@ -9,7 +9,12 @@ import signal
 import socket
 import sys
 import time
+from collections.abc import Iterable
+from dataclasses import dataclass
+from importlib import metadata
 from pathlib import Path
+from types import TracebackType
+from typing import Final
 
 from PySide6.QtCore import QObject, QRect, QSocketNotifier, Qt, QTimer, QUrl
 from PySide6.QtGui import QColor, QRegion, QSurfaceFormat
@@ -17,22 +22,27 @@ from PySide6.QtQuick import QQuickView
 from PySide6.QtWidgets import QApplication
 
 import waddle_desktop
+from waddle_core.capabilities import Capabilities, degradations
 from waddle_core.config import WaddleConfig
 from waddle_core.identity import APP_ID, PENGUIN_WINDOW_TITLE
+from waddle_core.link import MAX_DELTA_CHARS
 from waddle_core.mood import Mood
 from waddle_core.paths import WaddlePaths
 from waddle_core.privacy import BlindReason, load_blocklist
 from waddle_core.proactivity import Context, Decision, Kind, TipBudget, decide
+from waddle_core.untrusted import clean
 from waddle_core.watching import CaptureScheduler, WatchPolicy
 from waddle_core.window import WindowInfo
 from waddle_desktop import log
+from waddle_desktop.assist import Assist, Current, build_assist
 from waddle_desktop.identity.cache import AppIdentity, IdentityCache, identify
 from waddle_desktop.identity.packaging import RealFs
 from waddle_desktop.identity.snapshot import ProcReader
-from waddle_desktop.io_thread import HostEvents, IoThread
+from waddle_desktop.io_thread import HostEvents, IoThread, error_site
 from waddle_desktop.kwin.link import KWinLink
 from waddle_desktop.kwin.scripts import core_script_path, cursor_script_path
 from waddle_desktop.kwin.types import OutputInfo, OwnWindow
+from waddle_desktop.link.client import LinkState
 from waddle_desktop.placement.positions import (
     PositionStore,
     Rect,
@@ -61,6 +71,167 @@ QML_DIR = _PACKAGE_DIR / "qml"
 
 def _now_ms() -> int:
     return int(time.monotonic() * 1000)
+
+
+def _client_version() -> str:
+    try:
+        return metadata.version("waddle-desktop")[:32]
+    except metadata.PackageNotFoundError:
+        return "0"
+
+
+# ---- what Waddle says around an answer ---------------------------------------------------
+#
+# Everything here is first-party wording picked by a code. Text from the machine (an app's
+# name) is cleaned to one short line first, and all of it is shown as plain text.
+
+THINKING: Final = "Thinking…"
+STARTING: Final = "I'm still starting up. Ask me again in a moment."
+START_FAILED: Final = (
+    "I couldn't start the part of me that answers. Restart Waddle, or run: waddle doctor"
+)
+NO_ANSWER: Final = "I have no answer for that."
+VERSION_BUTTON: Final = "Tell Waddle the version"
+VERSION_PLACEHOLDER: Final = "The version, for example 5.3"
+ASK_PLACEHOLDER: Final = "Ask Waddle…"
+VERSION_UNREADABLE: Final = "I couldn't find a version number in that. It looks like 5.3 or 21.0.2."
+VERSION_MOVED: Final = "That app is no longer in front. Click on it, then tell me again."
+VERSION_PAUSED: Final = (
+    "I'm paused, so I can't tell which app is in front. Unpause me, then tell me again."
+)
+SOURCE_LABELS: Final = ("screen", "system", "app", "model")
+_MAX_VERSION_TEXT: Final = 200
+
+_NOT_RUNNING: Final = frozenset({"", "stopped", "no_socket", "connect_failed", "lost"})
+ASLEEP: Final = (
+    "My brain is asleep.\nTo start it, run: waddle brain up\nTo find out more, run: waddle doctor"
+)
+_STILL_LOADING: Final = "My model is still loading. Try again in a moment."
+_ERRORS: Final[dict[str, str]] = {
+    "brain_lost": "My brain went away in the middle of that answer. Ask again in a moment.",
+    "model_missing": "A model I need is not downloaded yet. Run: waddle models pull all",
+    "model_unreachable": "I can't reach my models. Run: waddle doctor",
+    # UNVERIFIED (S3.2): the brain marks a timeout during a model load as "waking", but the
+    # link client does not pass that mark on, so a plain timeout has to cover both.
+    "model_timeout": "My model took too long. It may still be loading. Try again in a moment.",
+    "waking": _STILL_LOADING,
+    "busy": "I'm still busy with another question. Try again in a moment.",
+    "bad_model_output": "My model gave an answer I can't use. Try asking again.",
+    "too_large": "That question or its answer was too long for me. Try a shorter one.",
+    "bad_request": "I couldn't send that question. Try wording it differently.",
+}
+_ERROR_OTHER: Final = "Something went wrong on my side. Run: waddle doctor"
+
+
+def asleep_text(link: LinkState | None) -> str:
+    """What to say when you ask and the brain is not there. Wording per ``LinkState.reason``."""
+    if link is None or (link.status == "down" and link.reason in _NOT_RUNNING):
+        return ASLEEP
+    if link.status != "down":
+        return "I'm still reaching my brain. Ask me again in a moment."
+    off = degradations(Capabilities(brain="down", brain_reason=link.reason))[0]
+    more = "" if "waddle doctor" in off.fix else "\nTo find out more, run: waddle doctor"
+    return f"My brain is asleep. {off.why}\n{off.fix}{more}"
+
+
+def error_text(code: str, *, waking: bool = False) -> str:
+    """One plain sentence for an answer that failed. Empty for one you stopped yourself."""
+    if code == "cancelled":
+        return ""
+    if waking and code == "model_timeout":
+        return _STILL_LOADING
+    return _ERRORS.get(code, _ERROR_OTHER)
+
+
+def source_line(sources: Iterable[object]) -> str:
+    """ "[screen] [app]": where the answer came from, in the order the brain gave."""
+    known = [label for label in dict.fromkeys(sources) if label in SOURCE_LABELS]
+    return " ".join(f"[{label}]" for label in known)
+
+
+def _line(text: str, limit: int) -> str:
+    return " ".join(clean(text, limit).split())
+
+
+@dataclass(frozen=True)
+class VersionAsk:
+    """An app whose version Waddle could not work out, as the UI needs it."""
+
+    key: str  # which app, to ask about it only once; never shown and never logged
+    name: str
+    about_path: tuple[str, ...]  # menu labels from the app's pack; may be empty
+
+
+def version_ask(current: Current) -> VersionAsk | None:
+    app = current.app
+    if not current.needs_user or app is None:
+        return None
+    name = _line(app.name, 64)
+    if not name:
+        return None
+    path = tuple(label for label in (_line(part, 48) for part in current.about_path) if label)
+    return VersionAsk(app.app_id or name, name, path[:6])
+
+
+def version_hint(ask: VersionAsk) -> str:
+    if ask.about_path:
+        return (
+            f"Which version of {ask.name} is this? It is shown under {' → '.join(ask.about_path)}."
+        )
+    return f"Which version of {ask.name} is this? It is usually shown under Help → About."
+
+
+class _Relay:
+    """Lives on the I/O thread: turns what the assist layer reports into queued signals."""
+
+    def __init__(self, events: HostEvents):
+        self._events = events
+        self.turn = 0  # the UI's number for the open question; set on the loop with each ask
+        self.assist: Assist | None = None
+        self._told: VersionAsk | None = None
+
+    def delta(self, text: str) -> None:
+        self._events.answerDelta.emit(self.turn, text)
+
+    def done(self, sources: tuple[str, ...], _role: str | None) -> None:
+        self._events.answerDone.emit(self.turn, sources, self.version_ask())
+
+    def error(self, code: str) -> None:
+        self._events.answerError.emit(self.turn, code)
+
+    def identity_changed(self) -> None:
+        """The window in front, or what is known about it, changed."""
+        ask = self.version_ask()
+        if ask != self._told:
+            self._told = ask
+            self._events.identity.emit(ask)
+
+    def version_ask(self) -> VersionAsk | None:
+        assist = self.assist
+        if assist is None:
+            return None
+        try:
+            return version_ask(assist.identity.current())
+        except Exception as exc:
+            log.warning("version_ask_failed", kind=type(exc).__name__)
+            return None
+
+    def apply_version(self, key: str, text: str) -> None:
+        """You typed the version of the app ``key``. Says how it went with a signal."""
+        outcome, label = "moved", ""
+        assist = self.assist
+        try:
+            ask = self.version_ask()
+            if assist is not None and ask is not None and ask.key == key:
+                outcome = "unreadable"
+                if assist.identity.apply_user_version(text):
+                    outcome = "ok"
+                    app = assist.identity.current().app
+                    if app is not None and app.version:
+                        label = _line(f"{app.name} {app.version}", 100)
+        except Exception as exc:  # the text of the error could quote what you typed
+            log.warning("version_apply_failed", kind=type(exc).__name__)
+        self._events.versionApplied.emit(outcome, label)
 
 
 class PenguinView(QQuickView):
@@ -121,6 +292,19 @@ class WaddleApp(QObject):
         self._sensors_reported = False  # until then the penguin does not act blind
         self._tips = TipBudget()
         self._steady = Mood.IDLE
+        # ---- the brain and the open question (all UI-thread state) ----
+        self._assist: Assist | None = None  # set once, from the I/O loop, when it is wired
+        self._assist_failed = False  # set from the I/O loop if the wiring itself failed
+        self._turn = 0  # counts questions; events of an older one are dropped
+        self._asking = False  # a question is open and the brain was up when it was asked
+        self._link: LinkState | None = None  # None until the link has said anything
+        self._brain_down = False
+        self._asleep_shown = ""  # the "brain is asleep" bubble, to take it back when untrue
+        self._version_ask: VersionAsk | None = None  # the app in front, if it needs asking
+        self._bubble_version: VersionAsk | None = None  # what the bubble's button asks about
+        self._ask_version: VersionAsk | None = None  # set while the Ask window asks a version
+        self._version_replied: VersionAsk | None = None  # the app your last reply was about
+        self._version_asked: set[str] = set()  # apps already asked about in this session
         self._outputs: dict[str, Rect] = {}
         self._placed = False
         self._last_own: OwnWindow | None = None
@@ -159,6 +343,7 @@ class WaddleApp(QObject):
         self._tray.quietToggled.connect(self._set_quiet)
         self._tray.eyesRequested.connect(self.open_eyes)
         self._tray.askRequested.connect(self.open_ask)
+        self._tray.versionRequested.connect(self.open_version)
         self._tray.quitRequested.connect(QApplication.quit)
         self._demo = DemoDriver(self._bridge, self) if demo else None
         if self._demo is not None:
@@ -181,6 +366,10 @@ class WaddleApp(QObject):
         b.moodChanged.connect(self._on_mood)
         b.transientFinished.connect(lambda: b.set_mood(self._steady))
         b.askRequested.connect(self.open_ask)
+        b.stopRequested.connect(self._on_stop)
+        b.bubbleActionRequested.connect(self._on_bubble_action)
+        if self._demo is None:  # in demo mode the demo driver plays the brain's part
+            b.textSubmitted.connect(self._ask_question)
 
         self._positions = PositionStore(paths.desktop_db)
         self._events = HostEvents()
@@ -191,6 +380,13 @@ class WaddleApp(QObject):
         self._events.frame.connect(self._on_frame)
         self._events.hotkey.connect(self._on_hotkey)
         self._events.hotkeysBound.connect(self._tray.set_shortcuts)
+        self._events.linkState.connect(self._on_link_state)
+        self._events.answerDelta.connect(self._on_answer_delta)
+        self._events.answerDone.connect(self._on_answer_done)
+        self._events.answerError.connect(self._on_answer_error)
+        self._events.identity.connect(self._on_identity)
+        self._events.versionApplied.connect(self._on_version_applied)
+        self._relay = _Relay(self._events)
         self._io = IoThread()
 
         # ---- senses: these objects live on the I/O thread once it starts ----
@@ -221,7 +417,7 @@ class WaddleApp(QObject):
             scheduler=CaptureScheduler(WatchPolicy.from_config(config.watching)),
             eye_factory=lambda: open_helper_eye(paths.capture_bin),
             identify=identify_window,
-            on_state=self._events.eyes.emit,
+            on_state=self._eyes_from_io,
             on_frame=self._events.frame.emit,
         )
         self._session = SessionWatcher(on_change=self._senses.session_changed)
@@ -254,6 +450,8 @@ class WaddleApp(QObject):
         self._io.start()
         self._io.submit(self._kwin.start())
         self._io.submit(self._start_sensors())
+        if self._demo is None:
+            self._io.submit(self._start_assist())
         if self._demo is not None and self._may_volunteer("demo-greeting"):
             self._demo.greet()
         log.event("desktop.started", demo=self._demo is not None)
@@ -270,8 +468,54 @@ class WaddleApp(QObject):
         except Exception as exc:
             log.warning("hotkeys.start_failed", error=type(exc).__name__)
 
+    def _eyes_from_io(self, state: EyesState) -> None:
+        """Called by the senses on the I/O thread."""
+        self._events.eyes.emit(state)
+        self._relay.identity_changed()  # a different window may need a different question
+
+    def _build_assist(self) -> Assist:
+        relay = self._relay
+        assist = build_assist(
+            self._paths,
+            self._senses,
+            client_version=_client_version(),
+            cache=self._identity_cache,
+            on_delta=relay.delta,
+            on_done=relay.done,
+            on_error=relay.error,
+            on_link_state=self._events.linkState.emit,
+            on_identity=relay.identity_changed,
+        )
+        relay.assist = assist
+        return assist
+
+    async def _start_assist(self) -> None:
+        """On the I/O loop, after the first frame: wire the brain link and start reaching."""
+        try:
+            assist = self._build_assist()  # reads the app packs from disk
+            assist.start()
+        except Exception as exc:  # Waddle still runs; asking says he is not ready
+            log.warning("assist.start_failed", error=type(exc).__name__)
+            self._assist_failed = True  # "still starting up" would never become true
+            return
+        self._assist = assist
+        self._relay.identity_changed()
+
+    async def _ask_on_loop(self, assist: Assist, turn: int, text: str) -> None:
+        # No await between these two: from here on every callback belongs to this turn (the
+        # asker drops the callbacks of the question it replaces).
+        self._relay.turn = turn
+        try:
+            await assist.asker.ask(text)
+        except Exception as exc:
+            log.warning("ask_failed", kind=type(exc).__name__)
+            self._events.answerError.emit(turn, "internal")
+
     async def _stop_sensors(self) -> None:
-        for stop in (self._hotkeys.stop, self._session.stop, self._senses.stop, self._kwin.stop):
+        stops = [self._hotkeys.stop, self._session.stop, self._senses.stop, self._kwin.stop]
+        if self._assist is not None:
+            stops.insert(0, self._assist.stop)  # the open question and the link go first
+        for stop in stops:
             try:
                 await asyncio.wait_for(stop(), 1.5)
             except Exception as exc:
@@ -280,13 +524,14 @@ class WaddleApp(QObject):
     def shutdown(self) -> None:
         self._watcher.stop()
         self._view.teardown()
+        self._bridge.set_bubble("")  # ends a streaming answer: late events find nothing open
         for view in (self._ask, self._eyes_view):
             if view is not None:
                 view.hide()
                 view.setSource(QUrl())
         if self._io.running:
             try:
-                self._io.submit(self._stop_sensors()).result(timeout=7.0)
+                self._io.submit(self._stop_sensors()).result(timeout=9.0)
             except Exception:
                 log.warning("sensors.stop_failed")
             self._io.stop()
@@ -314,7 +559,6 @@ class WaddleApp(QObject):
 
     def _set_paused(self, paused: bool) -> None:
         self._paused = paused
-        self._tray.set_state(TrayState.PAUSED if paused else TrayState.WATCHING)
         self._io.call(self._senses.set_paused, paused)
         self._sync_presence()
 
@@ -346,11 +590,19 @@ class WaddleApp(QObject):
             base = Mood.SLEEPING
         elif state.eyes_closed and self._sensors_reported:
             base = Mood.EYES_CLOSED
+        elif self._brain_down:
+            base = Mood.NAPPING_BRAIN  # also mid-answer: nobody is thinking any more
+        elif self._asking:
+            base = Mood.THINKING
         else:
             base = Mood.IDLE
         if base is not self._base_mood:
             self._base_mood = base
             self._bridge.set_mood(base)
+        if self._paused:
+            self._tray.set_state(TrayState.PAUSED)
+        else:
+            self._tray.set_state(TrayState.BRAIN_DOWN if self._brain_down else TrayState.WATCHING)
 
         fullscreen = state.window is not None and state.window.fullscreen
         if not fullscreen:
@@ -372,11 +624,15 @@ class WaddleApp(QObject):
         elif action == "quiet":
             self._tray.quiet.toggle()
         elif action == "bring_back":
-            self._brought_back = True
-            if self._tray.show_waddle.isChecked():
-                self._sync_presence()
-            else:
-                self._tray.show_waddle.setChecked(True)
+            self._bring_back()
+
+    def _bring_back(self) -> None:
+        """Show him again: over a fullscreen app, or after "Show Waddle" was switched off."""
+        self._brought_back = True
+        if self._tray.show_waddle.isChecked():
+            self._sync_presence()
+        else:
+            self._tray.show_waddle.setChecked(True)
 
     def _may_volunteer(self, category: str) -> bool:
         """The proactivity gate: every bubble nobody asked for goes through here."""
@@ -451,13 +707,145 @@ class WaddleApp(QObject):
         if b.guide_view is not None:
             b.set_card_open(not bool(b.property("cardOpen")))
         elif b.property("bubbleText"):
-            b.set_bubble("")
+            b.dismissBubble()  # also stops an answer that is still arriving
         elif self._demo is not None:
             self._demo.toggle_guide()
+
+    # ---- the brain -------------------------------------------------------------------
+    #
+    # UNVERIFIED (S3.2, and the Phase 3 "done when" checks on a real desktop): everything
+    # below was run offscreen against a fake brain on a real Unix socket. Not run: a real
+    # brain and model, a real Plasma session (the Ask window growing for its version hint,
+    # Stop and the version button inside the penguin window's input mask), first-words timing.
+
+    def _on_link_state(self, state: LinkState) -> None:
+        self._link = state
+        if state.status == "up":
+            self._brain_down = False
+            if self._asleep_shown and self._bridge.property("bubbleText") == self._asleep_shown:
+                self._bridge.set_bubble("")  # no longer true
+            self._asleep_shown = ""
+        elif state.status == "down" and state.reason != "stopped":
+            self._brain_down = True
+        # "connecting" is one more try: he stays as he was, so a brain that is away does not
+        # make him blink awake at every attempt. "stopped" is Waddle's own doing.
+        self._sync_presence()
+
+    def _ask_question(self, text: str) -> None:
+        """You asked something. Always allowed: the proactivity gate is for the unasked."""
+        bridge = self._bridge
+        self._turn += 1
+        self._bubble_version = None
+        bridge.set_card_open(False)  # the answer goes in the bubble, which the card hides
+        if not self._view.isVisible():
+            self._bring_back()  # you asked: the answer needs somewhere to be seen
+        assist = self._assist
+        if assist is None:
+            bridge.set_bubble(START_FAILED if self._assist_failed else STARTING)
+            return
+        up = self._link is not None and self._link.status == "up"
+        # While the brain is away nothing is promised: the asker answers "brain_down" at once
+        # (and tries the brain again), unless it came back this very moment.
+        bridge.begin_stream(THINKING if up else "")
+        self._asking = up
+        self._sync_presence()
+        log.event("ui_ask", brain=self._link.status if self._link is not None else "unknown")
+        self._io.submit(self._ask_on_loop(assist, self._turn, text))
+
+    def _live(self, turn: int) -> bool:
+        """The event belongs to the question whose answer is still open in the bubble."""
+        return turn == self._turn and self._bridge.streaming
+
+    def _answer_over(self) -> None:
+        self._asking = False
+        self._sync_presence()
+
+    def _on_answer_delta(self, turn: int, text: str) -> None:
+        if self._live(turn):
+            # Cleaned where it was received too; this is the last stop before the screen.
+            self._bridge.push_delta(clean(text, MAX_DELTA_CHARS))
+
+    def _on_answer_done(self, turn: int, sources: object, ask: object) -> None:
+        if not self._live(turn):
+            return
+        lines = [source_line(sources if isinstance(sources, tuple) else ())]
+        action = ""
+        if isinstance(ask, VersionAsk) and ask.key not in self._version_asked:
+            # Once per app per session. After that the tray entry is the way in.
+            self._version_asked.add(ask.key)
+            self._bubble_version = ask
+            lines.append(f"I can't tell which version of {ask.name} this is.")
+            action = VERSION_BUTTON
+        note = "\n".join(line for line in lines if line)
+        self._bridge.end_stream(note=note, action=action, fallback=NO_ANSWER)
+        self._answer_over()
+
+    def _on_answer_error(self, turn: int, code: str) -> None:
+        if not self._live(turn):
+            return
+        bridge = self._bridge
+        if code == "brain_down":
+            self._asleep_shown = asleep_text(self._link)
+            bridge.set_bubble(self._asleep_shown)
+        else:
+            waking = self._link is not None and self._link.waking is not None
+            sentence = error_text(code, waking=waking)
+            if bridge.stream_has_text:
+                bridge.end_stream(note=sentence)  # what arrived stays, with why it stopped
+            else:
+                bridge.end_stream(fallback=sentence)
+        self._answer_over()
+
+    def _on_stop(self) -> None:
+        """Stop was clicked, or the bubble was closed mid-answer."""
+        assist = self._assist
+        if assist is not None:
+            self._io.call(assist.asker.cancel)
+        self._bridge.end_stream()  # what has arrived stays
+        self._answer_over()
+
+    # ---- "which version is this?" ----------------------------------------------------
+
+    def _on_identity(self, ask: object) -> None:
+        self._version_ask = ask if isinstance(ask, VersionAsk) else None
+        self._tray.set_version_wanted(self._version_ask is not None)
+
+    def _on_bubble_action(self) -> None:
+        if self._bubble_version is not None:
+            self._show_ask(self._bubble_version)
+
+    def open_version(self) -> None:
+        """You chose "Tell Waddle the version" yourself (tray)."""
+        if self._version_ask is not None:
+            self._show_ask(self._version_ask)
+
+    def _on_version_applied(self, outcome: str, label: str) -> None:
+        asked, self._version_replied = self._version_replied, None
+        if self._bridge.streaming:
+            self._on_stop()
+        log.event("version_told", outcome=outcome)
+        if outcome == "ok":
+            self._bridge.set_bubble(f"Got it: {label}." if label else "Got it. Thank you.")
+        elif outcome == "unreadable":
+            self._bubble_version = asked
+            action = VERSION_BUTTON if asked is not None else ""
+            self._bridge.set_bubble(VERSION_UNREADABLE, action=action)
+        else:
+            # While paused nothing is known about the app in front: "click on it" would not help.
+            self._bridge.set_bubble(VERSION_PAUSED if self._paused else VERSION_MOVED)
 
     # ---- the Ask window --------------------------------------------------------------
 
     def open_ask(self) -> None:
+        self._show_ask(None)
+        assist = self._assist
+        if assist is not None:
+            # Have the answering model loaded by the time you finish typing. While the brain
+            # is away this tries it again instead.
+            self._io.call(assist.asker.prewarm)
+
+    def _show_ask(self, version: VersionAsk | None) -> None:
+        """The text window: for a question, or (``version``) for one app's version."""
         if self._ask is None:
             ask = QQuickView()
             ask.setTitle("Ask Waddle")
@@ -471,16 +859,26 @@ class WaddleApp(QObject):
             root.submitted.connect(self._on_ask_submitted)  # type: ignore[attr-defined]
             root.cancelled.connect(ask.hide)  # type: ignore[attr-defined]
             self._ask = ask
-        self._ask.show()
-        self._ask.requestActivate()
         root = self._ask.rootObject()
         assert root is not None
+        if version != self._ask_version:
+            root.clearInput()  # type: ignore[attr-defined]  # half a question is not a version
+        self._ask_version = version
+        root.setProperty("hint", version_hint(version) if version is not None else "")
+        root.setProperty("placeholder", VERSION_PLACEHOLDER if version else ASK_PLACEHOLDER)
+        self._ask.show()
+        self._ask.requestActivate()
         root.focusInput()  # type: ignore[attr-defined]
 
     def _on_ask_submitted(self, text: str) -> None:
         if self._ask is not None:
             self._ask.hide()
-        self._bridge.submitText(text)
+        version, self._ask_version = self._ask_version, None
+        if version is None:
+            self._bridge.submitText(text)
+        elif self._assist is not None:
+            self._version_replied = version
+            self._io.call(self._relay.apply_version, version.key, text[:_MAX_VERSION_TEXT])
 
     # ---- placement (KWin) ------------------------------------------------------------
 
@@ -536,6 +934,21 @@ class WaddleApp(QObject):
             self._io.submit(self._kwin.move_own_window(PENGUIN_WINDOW_TITLE, *target))
 
 
+def _on_uncaught(
+    kind: type[BaseException], value: BaseException, _traceback: TracebackType | None
+) -> None:
+    """An error nobody caught on the UI thread (a slot, a timer).
+
+    Python would print the traceback with the error's text, and that text can quote an answer
+    or an app's name. The log gets the kind of error and where it was raised.
+    """
+    log.warning("ui_error", kind=kind.__name__, where=error_site(value))
+
+
+def install_error_hook() -> None:
+    sys.excepthook = _on_uncaught
+
+
 def _install_signal_handlers(app: QApplication) -> QSocketNotifier:
     """Quit cleanly on SIGINT/SIGTERM without a polling timer (idle CPU stays at zero)."""
     reader, writer = socket.socketpair()
@@ -586,6 +999,7 @@ def run(config: WaddleConfig, paths: WaddlePaths, *, demo: bool = False) -> int:
     app.setQuitOnLastWindowClosed(False)
     _install_signal_handlers(app)
 
+    install_error_hook()
     waddle = WaddleApp(config, paths, demo=demo)
     waddle.start()
     try:

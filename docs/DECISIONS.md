@@ -350,7 +350,7 @@ Status key: `proposed` (not yet built) · `accepted` · `superseded by D-xxx`.
 - **Status:** accepted.
 
 ### D-060 The sandbox for `man`, `tldr` and `--version`
-- bubblewrap with no network, a fresh empty home, the system read-only, every capability dropped, a new session, and `prlimit` inside it (memory, CPU, file size, process count, no core dumps). Only three small scratch places are writable, 8 MiB each. A one-time self-check runs the full profile; if it fails, these three tools are off and Waddle says so. There is no unsandboxed fallback.
+- bubblewrap with no network, a fresh empty home, the system read-only, every capability dropped, a new session, and `prlimit` inside it (memory, CPU, file size, process count, no core files; a system crash collector such as apport is outside that limit, see spike S3.5). Only three small scratch places are writable, 8 MiB each. A one-time self-check runs the full profile; if it fails, these three tools are off and Waddle says so. There is no unsandboxed fallback.
 - One thing of yours is visible inside: the offline page cache of a `tldr` client, read-only, because without it `tldr` cannot answer. Nothing else under your home is bound.
 - The model cannot choose a command. It can only name a tool from a closed list of four, with arguments validated on the host (a man page name is a short identifier, not a command line), at most four calls per question.
 - **Status:** accepted.

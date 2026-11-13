@@ -15,11 +15,12 @@ produces the answers, and keeps three promises of its own:
 
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import Callable
 from typing import Final
 
-from waddle_core.tools import MAX_TOOL_RESULT_BYTES, ToolError
+from waddle_core.tools import MAX_TOOL_CALLS_PER_REQUEST, MAX_TOOL_RESULT_BYTES, ToolError
 from waddle_core.untrusted import ELLIPSIS, clean
 from waddle_desktop.assist import sight
 from waddle_desktop.assist.identity_service import Current
@@ -33,6 +34,10 @@ UNAVAILABLE: Final = "unavailable"
 TIMEOUT: Final = "timeout"
 FAILED: Final = "failed"
 MAX_DOC_CHARS: Final = 32_000  # more than the sandbox's own byte caps allow through
+# System numbers are read on a worker thread (``statvfs`` on a dead network mount can hang,
+# and the I/O loop also carries the privacy latch). At most this many readers at a time, so
+# readers that never come back cannot use up the thread pool.
+MAX_STATS_READERS: Final = MAX_TOOL_CALLS_PER_REQUEST
 
 SystemStats = Callable[[str], dict[str, object]]
 
@@ -88,6 +93,7 @@ class HostBackends:
         self._sandbox = sandbox
         self._helper_installed = helper_installed
         self._stats = stats
+        self._stats_running = 0
 
     async def app_state(self) -> dict[str, object]:
         state = self._eyes()
@@ -117,10 +123,20 @@ class HostBackends:
         return out
 
     async def system_stats(self, topic: str) -> dict[str, object]:
-        stats = self._stats(topic)
+        if self._stats_running >= MAX_STATS_READERS:
+            raise ToolError(UNAVAILABLE)
+        reader = asyncio.get_running_loop().run_in_executor(None, self._stats, topic)
+        self._stats_running += 1
+        reader.add_done_callback(self._stats_read)
+        # Shielded: if the dispatcher stops waiting, the reader still counts until it ends.
+        stats = await asyncio.shield(reader)
         if not isinstance(stats, dict):
             raise ToolError(FAILED)
         return stats
+
+    def _stats_read(self, reader: asyncio.Future[dict[str, object]]) -> None:
+        # ``shield`` looks at a late error itself, so the loop never reports it (with its text).
+        self._stats_running -= 1
 
     async def man(self, name: str, section: str | None) -> dict[str, object]:
         sandbox = await self._sandbox.ready()

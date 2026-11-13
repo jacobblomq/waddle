@@ -12,12 +12,17 @@ Item {
     property int maxLines: 4
     property bool tailRight: true
     property real maxWidth: 40 * s.u // 320 px at 10 pt
+    property string note // a small line under the text: where an answer came from
+    property bool busy: false // an answer is still arriving: offer Stop
+    property string action // label of one optional button; empty for none
     readonly property int expandedLines: 12
     readonly property bool truncated: label.lineCount > Math.max(1, maxLines)
     readonly property string accessibleText: Accessible.name
 
     signal moreClicked // the owner toggles `expanded`
     signal dismissed
+    signal stopClicked
+    signal actionClicked
 
     readonly property real pad: Math.round(s.u * 1.25)
     readonly property real tailSize: Math.round(s.u * 1.5)
@@ -25,12 +30,14 @@ Item {
     readonly property real chrome: 2 * s.inset + 2 * pad + closeButton.width
     readonly property real lineHeight: label.lineCount > 0 ? label.contentHeight / label.lineCount : 0
 
-    implicitWidth: Math.min(maxWidth, Math.ceil(label.implicitWidth) + chrome)
+    readonly property real footerWidth: !footer.visible ? 0
+        : Math.max(buttons.implicitWidth, noteLabel.visible ? noteLabel.implicitWidth : 0)
+    implicitWidth: Math.min(maxWidth, Math.ceil(Math.max(label.implicitWidth, footerWidth)) + chrome)
     implicitHeight: 2 * s.inset + 2 * pad + view.height + (more.visible ? more.height + s.u * 0.25 : 0)
-                    + tailHeight
+                    + (footer.visible ? footer.height + s.u * 0.5 : 0) + tailHeight
 
     Accessible.role: Accessible.StaticText
-    Accessible.name: text
+    Accessible.name: note.length > 0 ? text + "\n" + note : text
 
     WStyle {
         id: s
@@ -121,6 +128,57 @@ Item {
         text: root.expanded ? qsTr("less") : qsTr("… more")
         accessibleName: root.expanded ? qsTr("Show less") : qsTr("Show more")
         onClicked: root.moreClicked()
+    }
+
+    Column { // source line, Stop, and at most one action
+        id: footer
+        visible: root.note.length > 0 || root.busy || root.action.length > 0
+        x: view.x
+        y: (more.visible ? more.y + more.height : view.y + view.height) + s.u * 0.5
+        width: view.width
+        spacing: s.u * 0.5
+
+        Text {
+            id: noteLabel
+            objectName: "note"
+            visible: root.note.length > 0
+            width: parent.width
+            text: root.note
+            textFormat: Text.PlainText // labels and app names are data too
+            wrapMode: Text.Wrap
+            maximumLineCount: 4
+            elide: Text.ElideRight
+            color: s.mix(s.viewBg, s.viewFg, 0.62)
+            font.family: s.fontFamily
+            font.pointSize: s.fontPointSize * 0.9
+        }
+
+        Row {
+            id: buttons
+            visible: root.busy || root.action.length > 0 // not the buttons' own `visible`
+            spacing: s.u
+
+            WButton {
+                id: stop
+                objectName: "stop"
+                theme: root.theme
+                motionScale: root.motionScale
+                visible: root.busy
+                text: qsTr("Stop")
+                accessibleName: qsTr("Stop this answer")
+                onClicked: root.stopClicked()
+            }
+
+            WButton {
+                id: actionButton
+                objectName: "action"
+                theme: root.theme
+                motionScale: root.motionScale
+                visible: root.action.length > 0
+                text: root.action
+                onClicked: root.actionClicked()
+            }
+        }
     }
 
     WButton {

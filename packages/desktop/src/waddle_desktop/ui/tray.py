@@ -66,6 +66,7 @@ class Tray(QObject):
     quietToggled = Signal(bool)
     eyesRequested = Signal()
     askRequested = Signal()
+    versionRequested = Signal()
 
     def __init__(self, accent: str, *, demo: bool = False, parent: QObject | None = None):
         super().__init__(parent)
@@ -76,6 +77,10 @@ class Tray(QObject):
 
         self.ask = self._menu.addAction("Ask Waddle…")
         self.ask.triggered.connect(self.askRequested)
+        # Only there while the app in front has a version Waddle could not work out.
+        self.tell_version = self._menu.addAction("Tell Waddle the version…")
+        self.tell_version.triggered.connect(self.versionRequested)
+        self.tell_version.setVisible(False)
         self._menu.addSeparator()
         self.pause = self._check("Pause", self.pauseToggled)
         self.quiet = self._check("Quiet mode", self.quietToggled)
@@ -145,6 +150,9 @@ class Tray(QObject):
             key = keys.get(action_id, "")
             action.setText(f"{base}\t{key}" if key else base)
 
+    def set_version_wanted(self, wanted: bool) -> None:
+        self.tell_version.setVisible(wanted)
+
     def show(self) -> None:
         self._icon.show()
 
@@ -152,4 +160,4 @@ class Tray(QObject):
         self._icon.hide()
 
     def action_texts(self) -> list[str]:
-        return [a.text() for a in self._menu.actions() if not a.isSeparator()]
+        return [a.text() for a in self._menu.actions() if not a.isSeparator() and a.isVisible()]

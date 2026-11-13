@@ -14,6 +14,8 @@ Rules it keeps:
   matching on its title, no probe of its binary, no ``AppContext``.
 - A version is passed on only when it is trustworthy enough (``VERSION_CONFIDENCE``); a guess
   is sent as "unknown" so the answer says so instead of sounding sure.
+- When only the title of the window changes, the last answer stands until the new one is
+  ready, unless that answer was read from the old title.
 - A version probe that timed out is tried again later, not remembered as "has no version".
 
 Everything runs on the I/O loop. Logs carry event names and booleans only.
@@ -181,14 +183,16 @@ class IdentityService:
         key = _key(self._eyes())
         if key is None:
             return NOTHING
-        entry = self._known(key)
+        entry = self._known(key) or self._same_app(key)
         if entry is not None:
             refined = entry.refined
+            app = _context(refined.identity, entry.pack)
+            # Without a name there is nothing to ask "which version of ...?" about.
             return Current(
-                _context(refined.identity, entry.pack),
+                app,
                 entry.pack,
-                refined.needs_user,
-                refined.about_path,
+                refined.needs_user and app is not None,
+                refined.about_path if app is not None else (),
             )
         # Not refined yet: what identify() said, and the pack by app alone (not by title).
         pack = self._find(key.identity, "")
@@ -205,6 +209,20 @@ class IdentityService:
     def _known(self, key: _Key) -> _Entry | None:
         entry = self._entries.get(key.uuid)
         return entry if entry is not None and entry.key == key else None
+
+    def _same_app(self, key: _Key) -> _Entry | None:
+        """The last result for this window when only its title changed since.
+
+        A new title starts a new refinement; until that finishes, what was worked out a
+        moment ago still holds, unless it was read from the old title itself (a version in
+        the title, or a web app in a browser tab).
+        """
+        entry = self._entries.get(key.uuid)
+        if entry is None or (entry.key.pid, entry.key.identity) != (key.pid, key.identity):
+            return None
+        if entry.refined.identity.source in (waterfall.SOURCE_CAPTION, waterfall.SOURCE_WEB):
+            return None
+        return entry
 
     def _store(self, entry: _Entry) -> None:
         self._entries.pop(entry.key.uuid, None)
@@ -248,7 +266,12 @@ class IdentityService:
                 log.event("identity_stale_dropped")
                 continue
             self._wanted = None
-            self._store(_Entry(key, self._remembered(key.identity, refined), pack))
+            try:
+                self._store(_Entry(key, self._remembered(key.identity, refined), pack))
+            except Exception as exc:
+                # Nobody awaits this task. Its error text could quote a title or a path, so
+                # it must not reach the loop's own error report either.
+                log.warning("identity_work_error", kind=type(exc).__name__)
 
     def _told_key(self, identity: AppIdentity) -> tuple[str, str, tuple[int, int] | None]:
         return (identity.app_id, identity.exe, self._stat(identity.exe))
@@ -288,8 +311,9 @@ class IdentityService:
         result = await sandbox.probe_version(exe, flag)
         if result.reason in (Reason.UNAVAILABLE, Reason.INVALID):
             return None
-        if result.reason is Reason.TIMEOUT:
-            # A slow start is not "this program has no version": do not let it be cached.
+        if result.reason in (Reason.TIMEOUT, Reason.FAILED):
+            # A slow or failed start (it may be the sandbox's limits) is not "this program has
+            # no version": do not let it be cached; try again later.
             _bounded(
                 self._probe_wait,
                 str(exe),

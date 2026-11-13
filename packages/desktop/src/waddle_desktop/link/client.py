@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import logging
 import os
 import random
 import secrets
@@ -102,6 +103,13 @@ class LinkSocket(Protocol):
 
 Connector = Callable[[Path], Awaitable[LinkSocket]]
 
+# The websockets library logs whole frames at DEBUG (question, window title, answer text).
+# It gets a logger that goes nowhere, whatever the root logger's level is.
+_library_log = logging.getLogger("waddle.websockets")
+_library_log.addHandler(logging.NullHandler())
+_library_log.propagate = False
+_library_log.setLevel(logging.CRITICAL + 1)
+
 
 async def _unix_connector(path: Path) -> LinkSocket:
     return await unix_connect(
@@ -112,6 +120,7 @@ async def _unix_connector(path: Path) -> LinkSocket:
         ping_interval=KEEPALIVE,
         ping_timeout=KEEPALIVE,
         proxy=None,
+        logger=_library_log,
     )
 
 
@@ -413,7 +422,9 @@ class BrainLink:
             case AnswerError():
                 if request := self._open(message.id, "answer.error", end=True):
                     log.event("link_answer_error", code=message.code, waking=message.waking)
-                    _call(request.on_error, message.code)
+                    # A timeout while the model is still loading is reported as its own code.
+                    waking = message.waking and message.code == "model_timeout"
+                    _call(request.on_error, "waking" if waking else message.code)
             case ToolCall():
                 await self._tool_call(message, outbox)
             case State():

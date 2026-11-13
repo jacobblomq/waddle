@@ -36,6 +36,7 @@ _MARK = {OK: "✓", WARN: "!", BAD: "✗", SKIP: "?", NOTE: "-"}
 
 NVIDIA_VERSION_FILE: Final = Path("/proc/driver/nvidia/version")
 MIN_BWRAP: Final = "0.8"
+MAX_ROW_CHARS: Final = 400
 
 
 @dataclass(frozen=True)
@@ -433,8 +434,8 @@ def check_gpu(version_file: Path = NVIDIA_VERSION_FILE) -> list[Check]:
             "gpu",
             SKIP,
             "NVIDIA container runtime: not checked",
-            "Waddle cannot ask Docker about it. If it is missing, waddle brain up says so; "
-            "then install the NVIDIA Container Toolkit yourself.",
+            "Waddle cannot ask Docker about it. If it is missing, waddle brain up should fail "
+            "and say so; then install the NVIDIA Container Toolkit yourself.",
         ),
     ]
 
@@ -674,6 +675,10 @@ async def collect(
     return checks
 
 
+def _one_line(text: str) -> str:
+    return " ".join(clean(text, MAX_ROW_CHARS).split())
+
+
 def render(checks: list[Check]) -> str:
     lines: list[str] = []
     area = ""
@@ -681,9 +686,11 @@ def render(checks: list[Check]) -> str:
         if check.area != area:
             area = check.area
             lines.append(f"{area}:")
-        lines.append(f"  {_MARK[check.level]} {check.text}")
+        # Some rows name things other programs chose (a shortcut's owner, a file name):
+        # keep control characters away from the terminal, and keep each row on one line.
+        lines.append(f"  {_MARK[check.level]} {_one_line(check.text)}")
         if check.fix:
-            lines.append(f"      → {check.fix}")
+            lines.append(f"      → {_one_line(check.fix)}")
     bad = sum(1 for c in checks if c.level == BAD)
     warn = sum(1 for c in checks if c.level == WARN)
     skipped = sum(1 for c in checks if c.level == SKIP)

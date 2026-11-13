@@ -145,6 +145,10 @@ class OllamaProvider:
             "keep_alive": cfg.keep_alive_s,
             "options": {"num_ctx": cfg.num_ctx},
         }
+        if cfg.think is not None:
+            # UNVERIFIED (spike S3.2): ``think`` is a top-level boolean of /api/chat per
+            # Ollama's API docs; how each candidate model treats it is checked in the bake-off.
+            body["think"] = cfg.think
         if schema is not None:
             body["format"] = schema.model_json_schema()
         return body

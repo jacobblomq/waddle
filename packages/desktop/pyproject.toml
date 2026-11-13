@@ -23,6 +23,9 @@ packages = ["src/waddle_desktop"]
 
 [tool.hatch.build.targets.wheel.force-include]
 "../../kwin/waddle-core.js" = "waddle_desktop/_data/kwin/waddle-core.js"
+"../../kwin/waddle-cursor.js" = "waddle_desktop/_data/kwin/waddle-cursor.js"
+# Without this list Waddle refuses to start (it must know which windows are private).
+"../../knowledge/privacy" = "waddle_desktop/_data/knowledge/privacy"
 # First-party app packs; identity.packs.default_packs_dir() looks for them here.
 "../../knowledge/apps" = "waddle_desktop/_data/knowledge/apps"
 

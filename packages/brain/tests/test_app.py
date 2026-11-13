@@ -175,3 +175,18 @@ def test_serves_until_signalled_then_cleans_up(
     captured = capfd.readouterr()
     assert '"event":"brain_stopped"' in captured.err
     assert TOKEN not in captured.out + captured.err
+
+
+def test_the_provider_is_closed_even_if_stopping_the_server_fails(
+    tmp_path: Path, fakes: Fakes, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = write_config(tmp_path)
+    (tmp_path / "brain.sock").write_text("not a socket")  # start fails at once, then stop runs
+
+    async def broken_stop(self: object) -> None:
+        raise RuntimeError("stop failed")
+
+    monkeypatch.setattr(app.LinkServer, "stop", broken_stop)
+    with pytest.raises(RuntimeError, match="stop failed"):
+        app.main(["--config", str(config)])
+    assert fakes.provider.closed == 1
