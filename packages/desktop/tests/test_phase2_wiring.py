@@ -416,10 +416,11 @@ def test_the_tray_shows_the_key_that_is_really_bound(qtbot: Any) -> None:
     assert asked == [True]
 
 
-def test_a_click_on_the_penguin_with_nothing_open_asks(qapp: object) -> None:
+def test_a_click_on_the_penguin_brings_back_the_last_answer_and_the_ask_box(qapp: object) -> None:
     from waddle_desktop.ui import app as app_module
 
     opened: list[bool] = []
+    shown: list[tuple[str, str]] = []
 
     class _Bridge:
         guide_view = None
@@ -427,9 +428,47 @@ def test_a_click_on_the_penguin_with_nothing_open_asks(qapp: object) -> None:
         def property(self, name: str) -> str:
             return ""
 
+        def set_bubble(self, text: str, *, note: str = "") -> None:
+            shown.append((text, note))
+
     stand_in = type("S", (), {})()
     stand_in._bridge = _Bridge()
     stand_in._demo = None
+    stand_in._last_answer = ("", "")
     stand_in.open_ask = lambda: opened.append(True)
     app_module.WaddleApp._on_click(stand_in)
-    assert opened == [True]
+    assert opened == [True] and shown == []
+
+    stand_in._last_answer = ("It is Konsole.", "From: screen")
+    app_module.WaddleApp._on_click(stand_in)
+    assert opened == [True, True] and shown == [("It is Konsole.", "From: screen")]
+
+
+def test_the_ask_box_goes_away_when_you_click_elsewhere(qapp: object) -> None:
+    from waddle_desktop.ui import app as app_module
+
+    class _Ask:
+        def __init__(self) -> None:
+            self.active = False
+            self.visible = True
+
+        def isActive(self) -> bool:
+            return self.active
+
+        def isVisible(self) -> bool:
+            return self.visible
+
+        def hide(self) -> None:
+            self.visible = False
+
+    stand_in = type("S", (), {})()
+    stand_in._ask = _Ask()
+    stand_in._ask_was_active = False
+    on_active = app_module.WaddleApp._on_ask_active
+    on_active(stand_in)  # shown but not focused yet: it must not vanish at once
+    assert stand_in._ask.visible
+    stand_in._ask.active = True
+    on_active(stand_in)
+    stand_in._ask.active = False
+    on_active(stand_in)
+    assert not stand_in._ask.visible

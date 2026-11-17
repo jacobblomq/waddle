@@ -81,6 +81,11 @@ BYSTANDERS = [
 def run_js(script: Path, **scenario: Any) -> dict[str, Any]:
     assert NODE is not None
     scenario = {"screens": SCREENS, "activeScreen": "DP-1", **scenario, "script": str(script)}
+    if script == CORE_SCRIPT:
+        # The core script falls back to the topmost other window when the active one cannot
+        # be the target. Tests of everything else run with no stacking order, so they see
+        # only what activation does; the fallback tests pass ``stack`` themselves.
+        scenario.setdefault("stack", [])
     proc = subprocess.run(
         [NODE, str(MOCK)],
         input=json.dumps(scenario),
@@ -1551,3 +1556,39 @@ def test_new_dataclasses_are_frozen() -> None:
     ):
         with pytest.raises(AttributeError):
             setattr(value, field, 5)
+
+
+@needs_node
+def test_with_waddle_active_at_load_the_topmost_other_window_becomes_the_target() -> None:
+    # Found on a real desktop: Waddle only learned a window when focus changed to it, so a
+    # question asked before any focus change went out with no window at all.
+    result = run_js(
+        CORE_SCRIPT,
+        windows=[kate(), firefox(), penguin()],
+        active="penguin",
+        stack=[A, B, "penguin"],
+    )
+    assert [p["uuid"] for p in payloads(result, "Activated") if not p["own"]] == [B]
+
+
+@needs_node
+def test_with_nothing_active_at_load_the_topmost_other_window_becomes_the_target() -> None:
+    result = run_js(CORE_SCRIPT, windows=[kate(), firefox()], active=None, stack=[B, A])
+    assert [p["uuid"] for p in payloads(result, "Activated")] == [A]
+
+
+@needs_node
+def test_the_fallback_skips_minimized_and_special_windows() -> None:
+    result = run_js(
+        CORE_SCRIPT,
+        windows=[kate(), firefox(minimized=True), app(MENU, "plasmashell", "", normalWindow=False)],
+        active=None,
+        stack=[A, B, MENU],
+    )
+    assert [p["uuid"] for p in payloads(result, "Activated")] == [A]
+
+
+@needs_node
+def test_the_fallback_never_replaces_a_target_the_host_already_has() -> None:
+    result = run_js(CORE_SCRIPT, windows=[kate(), firefox(), penguin()], active=A, stack=[A, B])
+    assert [p["uuid"] for p in payloads(result, "Activated")] == [A]

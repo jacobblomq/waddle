@@ -425,10 +425,52 @@
 
     // --- workspace events -----------------------------------------------------------------
 
+    // The application the user is in when the active window cannot say so (nothing is
+    // active, or one of Waddle's own windows is): the topmost ordinary window on this
+    // desktop that is not Waddle's. Read-only.
+    // UNVERIFIED (S2.3) on real Plasma: stackingOrder is bottom to top, and a window's
+    // desktops list holds the same objects as workspace.currentDesktop.
+    function topmostOther() {
+        try {
+            var order = workspace.stackingOrder;
+            if (!order || typeof order.length !== "number") {
+                return null;
+            }
+            var here = workspace.currentDesktop;
+            for (var i = order.length - 1; i >= 0; i--) {
+                var w = order[i];
+                if (!w || w.normalWindow !== true || w.minimized === true || !w.frameGeometry ||
+                        isOwnClass(w)) {
+                    continue;
+                }
+                var desks = w.desktops;
+                if (here && desks && typeof desks.length === "number" && desks.length > 0 &&
+                        desks.indexOf(here) === -1) {
+                    continue; // on another virtual desktop
+                }
+                return w;
+            }
+        } catch (e) {
+            // No fallback this time.
+        }
+        return null;
+    }
+
+    function adoptFallback() {
+        if (target) {
+            return; // the host already has the application the user was in
+        }
+        var w = topmostOther();
+        if (w) {
+            onActivated(w);
+        }
+    }
+
     function onActivated(w) {
         try {
             if (!w) {
-                return; // nothing is active; the host keeps its target
+                adoptFallback(); // nothing is active; the host keeps its target if it has one
+                return;
             }
             var info = describeWindow(w);
             var text = JSON.stringify(info);
@@ -445,6 +487,8 @@
             callDBus(SERVICE, PATH, INTERFACE, "Activated", text);
             if (!info.own) {
                 refreshPopups();
+            } else {
+                adoptFallback();
             }
         } catch (e) {
             // A window that is going away; the next activation is reported.

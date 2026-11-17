@@ -336,6 +336,8 @@ class WaddleApp(QObject):
         self._view = PenguinView(self._bridge)
         self._view.setSource(QUrl.fromLocalFile(str(QML_DIR / "Main.qml")))
         self._ask: QQuickView | None = None
+        self._ask_was_active = False
+        self._last_answer: tuple[str, str] = ("", "")  # text, note; memory only
 
         self._tray = Tray(self._theme.palette.accent, demo=demo, parent=self)
         self._tray.pauseToggled.connect(self._set_paused)
@@ -711,7 +713,12 @@ class WaddleApp(QObject):
         elif self._demo is not None:
             self._demo.toggle_guide()
         else:
-            self.open_ask()  # nothing is open: a click on him means "I want to ask"
+            # Nothing is open: a click on him means "back to our conversation". The last
+            # answer comes back, with the box to ask the next thing.
+            if self._last_answer[0]:
+                text, note = self._last_answer
+                b.set_bubble(text, note=note)
+            self.open_ask()
 
     # ---- the brain -------------------------------------------------------------------
     #
@@ -759,6 +766,11 @@ class WaddleApp(QObject):
         return turn == self._turn and self._bridge.streaming
 
     def _answer_over(self) -> None:
+        # Kept in memory only, so a click on him can bring it back; gone when Waddle quits.
+        text = self._bridge.property("bubbleText")
+        if isinstance(text, str) and text:
+            note = self._bridge.property("bubbleNote")
+            self._last_answer = (text, note if isinstance(note, str) else "")
         self._asking = False
         self._sync_presence()
 
@@ -860,6 +872,7 @@ class WaddleApp(QObject):
             assert root is not None
             root.submitted.connect(self._on_ask_submitted)  # type: ignore[attr-defined]
             root.cancelled.connect(ask.hide)  # type: ignore[attr-defined]
+            ask.activeChanged.connect(self._on_ask_active)
             self._ask = ask
         root = self._ask.rootObject()
         assert root is not None
@@ -868,9 +881,21 @@ class WaddleApp(QObject):
         self._ask_version = version
         root.setProperty("hint", version_hint(version) if version is not None else "")
         root.setProperty("placeholder", VERSION_PLACEHOLDER if version else ASK_PLACEHOLDER)
+        self._ask_was_active = False
         self._ask.show()
         self._ask.requestActivate()
         root.focusInput()  # type: ignore[attr-defined]
+
+    def _on_ask_active(self) -> None:
+        """Clicking somewhere else puts the Ask box away (what was typed is kept)."""
+        ask = self._ask
+        if ask is None:
+            return
+        if ask.isActive():
+            self._ask_was_active = True
+        elif self._ask_was_active and ask.isVisible():
+            self._ask_was_active = False
+            ask.hide()
 
     def _on_ask_submitted(self, text: str) -> None:
         if self._ask is not None:

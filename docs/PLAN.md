@@ -217,7 +217,9 @@ Confirmed on your machine (2026-11-17, driver 615.71.09, Docker 29.0.1, NVIDIA C
 Found on your machine:
 - Doctor reported all four of Waddle's shortcuts as taken, and none of them fired. Cause: the conflict query sent KGlobalAccel's match type in the wrong D-Bus shape, the query was refused, and the fallback query counts Waddle's own keys as taken, so they were never requested. Fixed from upstream's interface file; to re-test (S2.4).
 - Clicking the penguin did nothing outside demo mode, and he stepped aside after 0.35 s of hovering, before a click could land. A click now opens Ask; the step-aside delay is 1.5 s.
-- A first answer named the app correctly but said no screenshot arrived. Cause not known yet.
+- A first answer said no screenshot arrived. Cause (from the log: `look blind no-window`): Waddle learned a window only when focus changed to it, so a question asked before any focus change had no window. The KWin script now falls back to the topmost ordinary window on the current desktop that is not Waddle's. To re-test.
+- `Meta+Space` still did not fire after the conflict-query fix. Open; needs the hotkey log lines.
+- Asked for and added: the Ask box closes when you click elsewhere; a click on the penguin brings back the last answer (kept in memory only) together with the Ask box.
 
 Still open: a real answer, GPU use by the model, first-words timing, napping and resume, S3.2, S3.5, S3.6.
 
