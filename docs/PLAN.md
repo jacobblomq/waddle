@@ -208,6 +208,17 @@ New spikes found while building, all 🖥:
 - **S3.5** `--version` inside the sandbox for Blender, GIMP, Inkscape, Firefox: does each print and exit under the limits? Does a crash of a probed program leave anything in `/var/crash` or `coredumpctl`?
 - **S3.6** Window titles, classes, Snap/Flatpak ids and About-menu paths in the 14 app packs, on real Plasma.
 
+Confirmed on your machine (2026-11-17, driver 615.71.09, Docker 29.0.1, NVIDIA Container Toolkit 1.20.2):
+- `waddle brain up` builds the image and starts both containers; both report healthy. Ollama starts with every capability dropped (part of S3.1).
+- All three provisional model tags exist and pull (5.6 GB, 16 GB, 0.6 GB) (part of S3.3).
+- **S3.4 passed:** the app accepts the brain's socket and the brain answers the handshake.
+- Sandbox self-check passes. No `tldr` client is installed, so that tool is off.
+
+Found on your machine:
+- Doctor reports all four of Waddle's shortcuts as "taken by another shortcut". Most likely they are Waddle's own, registered through the portal under a name the check does not recognise. Open.
+
+Still open: a real answer, GPU use by the model, first-words timing, napping and resume, S3.2, S3.5, S3.6.
+
 On your machine 🖥: README, "Phase 3 on your machine".
 
 ---
