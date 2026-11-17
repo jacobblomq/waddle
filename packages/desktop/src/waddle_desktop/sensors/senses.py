@@ -353,6 +353,13 @@ class Senses:
         async with self._look_lock:
             taken: list[tuple[str, Frame]] = []
             look = self._looked(await self._look(trigger, True, show=self._watching, taken=taken))
+            if look.status == "blind" and look.detail == "stale":
+                # The window in front changed during the look (closing the Ask box hands
+                # focus back to the app). Look once more, at the window that is there now.
+                taken.clear()
+                look = self._looked(
+                    await self._look(trigger, True, show=self._watching, taken=taken)
+                )
             if look.status != "ok" or not taken:
                 return Glimpse(look)
             uuid, frame = taken[0]

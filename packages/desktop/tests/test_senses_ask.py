@@ -109,3 +109,19 @@ async def test_a_look_once_frame_is_not_shown_once_the_eyes_panel_has_closed() -
     assert glimpse.frame is not None  # the question still gets its picture
     assert [f for f in rig.frames if f is not None] == []  # but nobody is shown it (D-049)
     await rig.senses.stop()
+
+
+async def test_a_look_that_went_stale_is_taken_again_at_the_window_now_in_front() -> None:
+    # Found on a real desktop: closing the Ask box moved focus during the look, the answer
+    # was thrown away as stale, and the question went out without a picture.
+    rig = h.SensesRig()
+    await rig.focus(h.win())
+    rig.eye.gate = asyncio.Event()
+    looking = asyncio.ensure_future(rig.senses.look_once())
+    await h.until(rig.eye.captures)
+    other = h.win(uuid="00000000-0000-4000-8000-000000000099")
+    rig.senses.window_activated(other)
+    rig.eye.gate.set()
+    glimpse = await looking
+    assert glimpse.look.status == "ok" and glimpse.frame is not None
+    assert glimpse.window_uuid == other.uuid

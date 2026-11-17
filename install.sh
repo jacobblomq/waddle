@@ -36,7 +36,11 @@ WADDLE_BIN="$REPO/.venv/bin/waddle"
 
 say "2/4 Desktop entry"
 mkdir -p "$(dirname "$DESKTOP_FILE")"
-sed "s|@WADDLE_BIN@|$WADDLE_BIN|" "$REPO/kwin/$APP_ID.desktop.in" > "$DESKTOP_FILE"
+# Written whole and moved into place: the desktop's application cache rebuilds when it sees
+# a change here, and must never read a half-written entry (KWin authorizes the capture
+# helper from that cache).
+sed "s|@WADDLE_BIN@|$WADDLE_BIN|" "$REPO/kwin/$APP_ID.desktop.in" > "$DESKTOP_FILE.new"
+mv -f "$DESKTOP_FILE.new" "$DESKTOP_FILE"
 
 say "3/4 KWin window rule"
 if command -v kwriteconfig6 >/dev/null 2>&1 && command -v kreadconfig6 >/dev/null 2>&1; then
@@ -56,7 +60,8 @@ if command -v cargo >/dev/null 2>&1; then
     chmod 700 "$DATA_HOME/waddle" "$(dirname "$CAPTURE_BIN")"
     install -m 0700 "$REPO/capture-helper/target/release/waddle-capture" "$CAPTURE_BIN.new"
     mv -f "$CAPTURE_BIN.new" "$CAPTURE_BIN"
-    sed "s|@CAPTURE_BIN@|$CAPTURE_BIN|" "$REPO/kwin/$APP_ID.Capture.desktop.in" > "$CAPTURE_DESKTOP_FILE"
+    sed "s|@CAPTURE_BIN@|$CAPTURE_BIN|" "$REPO/kwin/$APP_ID.Capture.desktop.in" > "$CAPTURE_DESKTOP_FILE.new"
+    mv -f "$CAPTURE_DESKTOP_FILE.new" "$CAPTURE_DESKTOP_FILE"
 else
     echo "cargo (Rust) not found: skipping the capture helper."
     echo "Waddle will run, but cannot look at windows. Install Rust from https://rustup.rs"
