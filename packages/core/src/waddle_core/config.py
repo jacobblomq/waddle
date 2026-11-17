@@ -28,7 +28,7 @@ class UiConfig(_Section):
 
 class PlacementConfig(_Section):
     dodge: bool = Field(True, description="Step aside when the pointer rests on the penguin.")
-    dodge_dwell_ms: int = Field(350, ge=0, le=5000)
+    dodge_dwell_ms: int = Field(1500, ge=0, le=5000)
     dodge_return_ms: int = Field(4000, ge=500, le=60000)
     margin_px: int = Field(24, ge=0, le=400, description="Gap to the screen edge.")
 

@@ -710,6 +710,8 @@ class WaddleApp(QObject):
             b.dismissBubble()  # also stops an answer that is still arriving
         elif self._demo is not None:
             self._demo.toggle_guide()
+        else:
+            self.open_ask()  # nothing is open: a click on him means "I want to ask"
 
     # ---- the brain -------------------------------------------------------------------
     #

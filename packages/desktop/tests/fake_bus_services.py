@@ -456,8 +456,8 @@ class FakeKGlobalAccel(FakeService):
         if msg.path != "/kglobalaccel" or msg.interface != "org.kde.KGlobalAccel":
             raise DBusError(UNKNOWN_METHOD, "no such method")
         if msg.member == "globalShortcutsByKey" and self.by_key != "missing":
-            assert msg.signature == "(ai)i"
-            (keys,), match_type = msg.body
+            assert msg.signature == "(ai)(i)"
+            (keys,), (match_type,) = msg.body
             assert len(keys) == 4 and keys[1:] == [0, 0, 0] and match_type == 0
             self.queries.append(("by-key", keys[0]))
             if self.by_key == "other-signature":

@@ -414,3 +414,22 @@ def test_the_tray_shows_the_key_that_is_really_bound(qtbot: Any) -> None:
     tray.askRequested.connect(lambda: asked.append(True))
     tray.ask.trigger()
     assert asked == [True]
+
+
+def test_a_click_on_the_penguin_with_nothing_open_asks(qapp: object) -> None:
+    from waddle_desktop.ui import app as app_module
+
+    opened: list[bool] = []
+
+    class _Bridge:
+        guide_view = None
+
+        def property(self, name: str) -> str:
+            return ""
+
+    stand_in = type("S", (), {})()
+    stand_in._bridge = _Bridge()
+    stand_in._demo = None
+    stand_in.open_ask = lambda: opened.append(True)
+    app_module.WaddleApp._on_click(stand_in)
+    assert opened == [True]

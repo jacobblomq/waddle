@@ -215,7 +215,9 @@ Confirmed on your machine (2026-11-17, driver 615.71.09, Docker 29.0.1, NVIDIA C
 - Sandbox self-check passes. No `tldr` client is installed, so that tool is off.
 
 Found on your machine:
-- Doctor reports all four of Waddle's shortcuts as "taken by another shortcut". Most likely they are Waddle's own, registered through the portal under a name the check does not recognise. Open.
+- Doctor reported all four of Waddle's shortcuts as taken, and none of them fired. Cause: the conflict query sent KGlobalAccel's match type in the wrong D-Bus shape, the query was refused, and the fallback query counts Waddle's own keys as taken, so they were never requested. Fixed from upstream's interface file; to re-test (S2.4).
+- Clicking the penguin did nothing outside demo mode, and he stepped aside after 0.35 s of hovering, before a click could land. A click now opens Ask; the step-aside delay is 1.5 s.
+- A first answer named the app correctly but said no screenshot arrived. Cause not known yet.
 
 Still open: a real answer, GPU use by the model, first-words timing, napping and resume, S3.2, S3.5, S3.6.
 

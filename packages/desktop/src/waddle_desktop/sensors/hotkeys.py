@@ -172,12 +172,14 @@ KGLOBALACCEL_SERVICE: Final = "org.kde.kglobalaccel"
 KGLOBALACCEL_PATH: Final = "/kglobalaccel"
 KGLOBALACCEL_INTERFACE: Final = "org.kde.KGlobalAccel"
 
-# UNVERIFIED (S2.4), taken from kglobalacceld's interface description, not from a live bus:
-# a QKeySequence travels as a struct holding an array of four ints (unused slots are 0), the
-# match type "Equal" is 0, and each returned KGlobalShortcutInfo starts with four strings:
+# From kglobalaccel's org.kde.KGlobalAccel.xml and kglobalshortcutinfo_dbus.cpp (read
+# 2026-11-17; an earlier guess sent the match type as a bare int, which KGlobalAccel
+# refused, so every key of Waddle's own looked taken): a QKeySequence travels as a struct
+# holding an array of four ints (unused slots are 0), the match type is a struct holding
+# one int ("Equal" is 0), and each returned KGlobalShortcutInfo starts with four strings:
 # action unique name, action friendly name, component unique name, component friendly name.
 _BY_KEY_MEMBER: Final = "globalShortcutsByKey"
-_BY_KEY_IN_SIGNATURE: Final = "(ai)i"
+_BY_KEY_IN_SIGNATURE: Final = "(ai)(i)"
 _BY_KEY_OUT_SIGNATURE: Final = "a(ssssssaiai)"
 _MATCH_EQUAL: Final = 0
 _AVAILABLE_MEMBER: Final = "globalShortcutAvailable"
@@ -237,7 +239,7 @@ async def _shortcuts_by_key(
         KGLOBALACCEL_INTERFACE,
         _BY_KEY_MEMBER,
         _BY_KEY_IN_SIGNATURE,
-        [_key_sequence(combo), _MATCH_EQUAL],
+        [_key_sequence(combo), [_MATCH_EQUAL]],
         timeout=timeout,
         autostart=False,  # asking must not start kglobalacceld where it is not running
     )
